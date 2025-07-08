@@ -226,6 +226,7 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 
   **a) Install yay and Gnome:**
    - pacman -S yay Gnome
+   - Install [Alacritty](https://github.com/alacritty/alacritty/blob/master/INSTALL.md) 
   - Reboot and Start Gnome
 
   **b) Install the applications: (Review installations steps in each application instructions websites before installing it)**
@@ -233,10 +234,242 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - yay -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - Install core applications:
-   - yay -S gdm nautilus helix zsh zellij yazi tlp powertop cpupower upower ufw apparmor flatpak flatseal bitwarden blender krita gimp gcc gdb rustup python-pygobject git fwupd lynis usbguard sshguard rkhunter ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd auditd chkrootkit libva-vdpau-driver libva-nvidia-driver zram-generator xdg-ninja mullvad-browser windscribe-vpn bubblejail
+   - yay -S gdm nautilus helix zsh zellij yazi tlp powertop cpupower upower ufw apparmor flatpak flatseal bitwarden blender krita gimp gcc gdb rustup python-pygobject git fwupd lynis usbguard sshguard rkhunter ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd auditd chkrootkit libva-vdpau-driver libva-nvidia-driver zram-generator xdg-ninja mullvad-browser windscribe-vpn bubblejail aide
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Brave Tor Standard-Notes
 
  **c) Install Fonts**
   - yay -S ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
+
+ **d) Enable services:**
+  - systemctl enable gdm NetworkManager bluetooth ufw auditd apparmor systemd-timesyncd tlp power-profiles-daemon
+
+## Step 12: **Configure Power Management, Security and Privacy**
+
+**a) Configure Power Management:**
+   - systemctl enable --now tlp
+   - systemctl mask power-profiles-daemon
+   - echo -e "CPU_SCALING_GOVERNOR=schedutil\nSOUND_POWER_SAVE_ON_AC=0" >> /etc/tlp.conf
+     - cat << 'EOF' > /etc/systemd/system/powertop.service
+       - [Unit]
+       - Description=Powertop Auto-Tune
+       - After=multi-user.target
+       - [Service]
+       - Type=oneshot
+       - ExecStart=/usr/bin/powertop --auto-tune
+       - RemainAfterExit=yes
+       - [Install]
+       - WantedBy=multi-user.target
+       - EOF
+     - systemctl enable --now powertop.service
+
+ **b) Configure Wayland envars:**
+   - cat << 'EOF' > /etc/environment
+     - MOZ_ENABLE_WAYLAND=1
+     - GDK_BACKEND=wayland
+     - CLUTTER_BACKEND=wayland
+     - QT_QPA_PLATFORM=wayland
+     - SDL_VIDEODRIVER=wayland
+     - WLR_NO_HARDWARE_CURSORS=1
+     - GBM_BACKEND=nvidia-drm
+     - LIBVA_DRIVER_NAME=nvidia
+     - XWAYLAND_EXTENSION_GLES=1
+     - EOF
+   - (Is it necessary?) gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
+   - (Is it necessary?) gsettings set org.gnome.desktop.interface scaling-factor 1.25
+   - echo 'prime-run %command%' > ~/.config/wayland-nvidia-run
+
+ **c) Configure MAC randomization:**
+   - mkdir -p /etc/NetworkManager/conf.d
+   - cat << 'EOF' > /etc/NetworkManager/conf.d/00-macrandomize.conf
+     - [device]
+     - wifi.scan-rand-mac-address=yes
+     - [connection]
+     - wifi.cloned-mac-address=random
+     - EOF
+   - systemctl restart NetworkManager
+   
+ **d) Configure firewall:**
+   - systemctl enable --now ufw
+   - ufw enable
+   - ufw default deny incoming
+   - ufw default allow outgoing
+   - (Is this necessary?) ufw allow proto ipv6
+
+ **e) Configure GNOME privacy:**
+   - gsettings set org.gnome.desktop.privacy send-software-usage-info false
+   - gsettings set org.gnome.desktop.privacy report-technical-problems false
+
+ **f) Configure IP spoofing protection::**
+   - cat << 'EOF' > /etc/host.conf
+     - order bind,hosts
+     - nospoof on
+     - EOF
+    
+ **g) Configure security limits:**
+   - cat << 'EOF' >> /etc/security/limits.conf
+     - * hard nproc 1000
+     - EOF
+
+ **h) Configure auditd:**
+   - systemctl enable --now auditd
+   - cat << 'EOF' > /etc/audit/rules.d/audit.rules
+     - -w /etc/passwd -p wa -k passwd_changes
+     - -w /etc/shadow -p wa -k shadow_changes
+     - -a always,exit -F arch=b64 -S execve -k exec
+     - -e 2
+     - EOF
+   - auditctl -a exit,always -F arch=b64 -S module_load -k module
+  - systemctl restart auditd
+
+ **i) Configure AppArmor:**
+   - apparmor_parser -r /etc/apparmor.d/*
+   - aa-complain /etc/apparmor.d/*
+   - aa-enforce /etc/apparmor.d/*
+
+ **j) Configure dnscrypt-proxy:**
+   - yay -S dnscrypt-proxy
+   - systemctl enable --now dnscrypt-proxy
+   - echo -e "[main]\ndns=dnscrypt-proxy" >> /etc/NetworkManager/NetworkManager.conf
+   - echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
+  **k) Configure `usbguard` with GSConnect exception:**
+   - usbguard generate-policy > /etc/usbguard/rules.conf
+   - usbguard list-devices # Identify GSConnect device ID
+   - usbguard allow-device <device-id>
+   - systemctl enable --now usbguard
+
+  **l) Enable `fapolicyd`, `sshguard`, `rkhunter`:**
+   - pacman -S fapolicyd
+   - systemctl enable --now fapolicyd
+   - systemctl enable --now sshguard
+   - rkhunter --propupd
+
+  **m) Run Lynis audit and create timer:**
+   - lynis audit system
+   - cat << 'EOF' > /etc/systemd/system/lynis-audit.timer
+     - [Unit]
+     - Description=Run Lynis audit weekly
+     - [Timer]
+     - OnCalendar=weekly
+     - Persistent=true
+     - [Install]
+     - WantedBy=timers.target
+     - EOF
+   - cat << 'EOF' > /etc/systemd/system/lynis-audit.service
+     - [Unit]
+     - Description=Run Lynis audit
+     - [Service]
+     - Type=oneshot
+     - ExecStart=/usr/bin/lynis audit system
+     - EOF
+   - systemctl enable --now lynis-audit.timer
   
+  **n) Configure Flatpak permissions:**
+   - flatpak override --user --nofilesystem=host
+
+  **o) Configure AIDE:**
+   - pacman -S aide
+   - aide --init
+   - mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+   - systemctl enable --now aide-check.timer
+
+## Step 13: **Configure eGPU (Nvidia and AMD)**
+  - Verify eGPU detection:
+    - lspci | grep -i nvidia
+    - lspci | grep -i amd
+    - dmesg | grep -i amdgpu
+    - ls /sys/class/drm/card*
+    - prime-run glxinfo | grep NVIDIA
+    - nvidia-smi
+  - Add environment variables for Nvidia:
+    - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
+  - Create udev rules for hotplugging:
+    - echo 'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; pkill -HUP gnome-shell\"' > /etc/udev/rules.d/99-nvidia-egpu.rules
+    - echo 'ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; pkill -HUP gnome-shell\"' >> /etc/udev/rules.d/99-nvidia-egpu.rules
+    - sudo udevadm control --reload-rules && sudo udevadm trigger
+  - Enable PCIe hotplug:
+    - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
+   
+## Step 14: **Configure Snapper**
+  - Install Snapper:
+    - yay -S snapper
+  - Create global filter:
+    - mkdir -p /etc/snapper/filters
+    - echo -e "/home/.cache\n/tmp\n/run" > /etc/snapper/filters/global-filter.txt
+  - Create configurations:
+    - snapper --config root create-config /
+    - snapper --config home create-config /home
+    - snapper --config data create-config /data
+  - Edit `/etc/snapper/configs/root`:
+    - cat << 'EOF' > /etc/snapper/configs/root
+      - TIMELINE_CREATE="yes"
+      - TIMELINE_CLEANUP="yes"
+      - TIMELINE_MIN_AGE="1800"
+      - TIMELINE_LIMIT_HOURLY="5"
+      - TIMELINE_LIMIT_DAILY="7"
+      - TIMELINE_LIMIT_WEEKLY="4"
+      - TIMELINE_LIMIT_MONTHLY="0"
+      - TIMELINE_LIMIT_YEARLY="0"
+      - SUBVOLUME="/"
+      - ALLOW_GROUPS=""
+      - SYNC_ACL="no"
+      - FILTER="/etc/snapper/filters/global-filter.txt"
+      - EOF
+    - Edit `/etc/snapper/configs/home` and `/etc/snapper/configs/data` similarly, updating `SUBVOLUME` to `/home` and `/data`.
+    - Enable Snapper:
+      - systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+     
+ ## Step 15: **Configure Dotfiles**
+  - Install chezmoi:
+    - yay -S chezmoi
+    - chezmoi init --apply
+   
+ ## Step 16: **Test the Setup**
+  - Reboot and confirm `systemd-boot` shows Arch and Windows entries.
+  - Test Arch boot with TPM-based LUKS unlocking and passphrase fallback.
+  - Test Windows boot.
+  - Test eGPU (AMD first, then Nvidia):
+   - **AMD GPU**:
+     - lspci | grep -i amd
+     - dmesg | grep -i amdgpu
+     - ls /sys/class/drm/card*
+     - DRI_PRIME=1 glxinfo | grep "OpenGL renderer"
+   - **NVIDIA GPU**:
+     - lspci | grep -i nvidia
+     - nvidia-smi
+     - prime-run glxinfo | grep "OpenGL renderer"
+ - Test hotplugging:
+   -  udevadm monitor
+   -  echo "0000:xx:00.0" | sudo tee /sys/bus/pci/devices/0000:xx:00.0/remove
+   -  echo 1 | sudo tee /sys/bus/pci/rescan
+   -  pkill -HUP gnome-shell
+ - Test hibernation:
+   - systemctl hibernate
+ - Test fwupd
+   - fwupdmgr refresh
+   - fwupdmgr update
+ - Test Snapshots
+   - snapper --config root create --description "Test snapshot"
+   - snapper list
+ - Test Timers
+   - journalctl -u yay-update.timer
+   - journalctl -u snapper-timeline.timer
+   - journalctl -u fstrim.timer
+   - journalctl -u lynis-audit.timer
+ - Stress Test
+   - yay -S stress-ng memtester fio
+   - stress-ng --cpu 4 --io 2 --vm 2 --vm-bytes 1G --timeout 72h
+   - memtester 1024 5
+   - fio --name=write_test --filename=/tmp/test --size=1G --rw=write
+ - Verify Wayland
+   - echo $XDG_SESSION_TYPE
+ - Verify Security
+   - auditctl -l
+   - apparmor_status 
+ - Test AUR builds with /tmp (no noexec)
+   - yay -S package-name
+ - Test Nvidia CUDA apps
+   - prime-run blender 
+
+ 
