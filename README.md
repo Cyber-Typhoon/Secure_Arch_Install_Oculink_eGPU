@@ -112,7 +112,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zhs 
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh 
   - Edit /mnt/etc/fstab to secure mounts:
   - cat << 'EOF' > /mnt/etc/fstab
     - /dev/mapper/cryptroot /btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
@@ -167,6 +167,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
    - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
    - chmod 600 /root/luks-keyfile
+   - systemd-cryptenroll --tpm2-device=auto --test /dev/nvme1n1p2
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
   - Back up keyfile to a secure USB.
@@ -198,7 +199,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << EOF > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet resume_offset=$SWAP_OFFSET nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -217,6 +218,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Generate minimal UKI:
      - mkinitcpio -P -c /etc/mkinitcpio-minimal.conf
    - Create GRUB USB for recovery:
+     - **Replace /dev/sdX1 with your USB partition**
+     - mkfs.fat -F32 /dev/sdX1
+     - mkdir -p /mnt/usb
+     - mount /dev/sdX1 /mnt/usb
      - pacman -S grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb
   
@@ -230,6 +235,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl enroll-keys --tpm-eventlog
    - sbctl sign -s /boot/EFI/Linux/arch.efi
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+   - **Reboot and enroll keys in UEFI firmware when prompted**
 
   **c) Sign UKI and Nvidia Modules:**
    - pacman -S nvidia-dkms nvidia-utils nvidia-settings nvidia-prime
@@ -251,7 +257,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [Action]
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
-     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
+     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+'); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
      - EOF
 
   **- Reboot and enroll MOK in UEFI firmware.**
