@@ -45,7 +45,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - efibootmgr  # Check if UEFI recognizes both ESPs
     
   **b) Format ESP**:
-  - mkfs.fat -F32 /dev/nvme1n1p1:
+  - mkfs.fat -F32 /dev/nvme1n1p1
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
