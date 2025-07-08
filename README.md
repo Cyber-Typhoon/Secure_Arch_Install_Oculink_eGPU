@@ -265,6 +265,7 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 
  **d) Enable services:**
   - systemctl enable gdm bluetooth ufw auditd apparmor systemd-timesyncd tlp power-profiles-daemon NetworkManager
+  - After enabling all systemd services, run systemctl --failed to check for misconfigurations or missing dependencies.
 
  **e) Configure Flatseal for Flatpak apps:**
   - flatpak override --user --nofilesystem=host
