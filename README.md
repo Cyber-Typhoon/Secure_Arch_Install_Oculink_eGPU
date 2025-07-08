@@ -525,8 +525,45 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - FILTER="/etc/snapper/filters/global-filter.txt"
       - EOF
     - Edit `/etc/snapper/configs/home` and `/etc/snapper/configs/data` similarly, updating `SUBVOLUME` to `/home` and `/data`.
+      - cat << 'EOF' > /etc/snapper/configs/home
+      - TIMELINE_CREATE="yes"
+      - TIMELINE_CLEANUP="yes"
+      - TIMELINE_MIN_AGE="1800"
+      - TIMELINE_LIMIT_HOURLY="0"
+      - TIMELINE_LIMIT_DAILY="7"
+      - TIMELINE_LIMIT_WEEKLY="4"
+      - TIMELINE_LIMIT_MONTHLY="6"
+      - TIMELINE_LIMIT_YEARLY="0"
+      - SUBVOLUME="/"
+      - ALLOW_GROUPS=""
+      - SYNC_ACL="no"
+      - FILTER="/etc/snapper/filters/global-filter.txt"
+      - EOF
+      - cat << 'EOF' > /etc/snapper/configs/data
+      - TIMELINE_CREATE="yes"
+      - TIMELINE_CLEANUP="yes"
+      - TIMELINE_MIN_AGE="1800"
+      - TIMELINE_LIMIT_HOURLY="0"
+      - TIMELINE_LIMIT_DAILY="7"
+      - TIMELINE_LIMIT_WEEKLY="4"
+      - TIMELINE_LIMIT_MONTHLY="6"
+      - TIMELINE_LIMIT_YEARLY="0"
+      - SUBVOLUME="/"
+      - ALLOW_GROUPS=""
+      - SYNC_ACL="no"
+      - FILTER="/etc/snapper/filters/global-filter.txt"
+      - EOF
     - Enable Snapper:
       - systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+    - Verify configuration:
+      - snapper --config root get-config
+      - snapper --config home get-config
+      - snapper --config data get-config
+    - Test snapshot creation:
+      - snapper --config root create --description "Initial test snapshot"
+      - snapper --config home create --description "Initial test snapshot"
+      - snapper --config data create --description "Initial test snapshot"
+      - snapper list
      
  ## Step 15: **Configure Dotfiles**
   - Install chezmoi:
