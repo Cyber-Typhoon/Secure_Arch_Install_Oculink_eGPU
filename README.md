@@ -234,9 +234,9 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - yay -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - Install core applications:
-   - yay -S gdm nautilus helix zsh zellij yazi tlp powertop cpupower upower ufw apparmor flatpak flatseal bitwarden blender krita gimp gcc gdb rustup python-pygobject git fwupd lynis usbguard sshguard rkhunter ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd auditd chkrootkit libva-vdpau-driver libva-nvidia-driver zram-generator xdg-ninja mullvad-browser windscribe-vpn bubblejail aide
+   - yay -S gdm nautilus helix zsh zellij yazi tlp powertop cpupower upower ufw apparmor flatpak flatseal bitwarden blender krita gimp gcc gdb rustup python-pygobject git fwupd lynis usbguard sshguard rkhunter ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd auditd chkrootkit libva-vdpau-driver libva-nvidia-driver zram-generator xdg-ninja mullvad-browser windscribe-vpn bubblejail aide brave-browser tor-browser
   - Install applications via Flatpak:
-   - flatpak install flathub lollypop steam element-desktop Brave Tor Standard-Notes
+   - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
  **c) Install Fonts**
   - yay -S ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
