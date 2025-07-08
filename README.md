@@ -12,7 +12,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - Enable TPM 2.0, Secure Boot, Resizable BAR, SVM/VT-x, and Intel VT-d (IOMMU).
      - Check for “Hybrid Graphics” or “PCIe Hotplug” options.
      - Set a strong UEFI BIOS password, store in Bitwarden, and disable legacy boot.
-     - Check for PCIe hotplug settings.
     
 ## Step 2: **Install Windows on Primary NVMe M.2 (/dev/nvme0n1)**
    - Install Windows 11 Pro on the primary NVMe M.2.
