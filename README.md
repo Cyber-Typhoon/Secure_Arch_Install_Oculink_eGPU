@@ -5,14 +5,14 @@ Installation Steps for a new Lenovo Thinkbook TGX (Oculink) Security Enhanhed Ar
 
 This action plan outlines the steps to install and configure **Arch Linux** on a **Lenovo ThinkBook 14+ 2025 Intel Core Ultra 7 255H without dGPU**, **GNOME Wayland**, **BTRFS**, **LUKS2**, **systemd-boot with UKI**, **Secure Boot**, and an **OCuP4V2 OCuLink GPU Dock ReDriver (Nvidia 5070 TI)**, including privacy and security hardening measures. This laptop has two M.2, we will have Windows in a slot to help updating BIOS and Firmware.
 
-## Step 1: Verify Hardware
+## Step 1: **Verify Hardware**
    - Access UEFI BIOS (F2 at boot):
      - Enable TPM 2.0, Secure Boot, Resizable BAR, SVM/VT-x, and Intel VT-d (IOMMU).
      - Check for “Hybrid Graphics” or “PCIe Hotplug” options.
      - Set a strong UEFI BIOS password, store in Bitwarden, and disable legacy boot.
      - Check for PCIe hotplug settings.
     
-## Step 2: Install Windows on Primary NVMe M.2 (/dev/nvme0n1)
+## Step 2: **Install Windows on Primary NVMe M.2 (/dev/nvme0n1)**
    - Install Windows 11 Pro on the primary NVMe M.2.
    - Follow some of the installations Privacy advises from the Privacy Guides Wiki [Minimizing Windows 11 Data Collection](https://discuss.privacyguides.net/t/minimizing-windows-11-data-collection/28193)
    - Allow Windows to create its default partitions, including a ~100-300 MB EFI System Partition (ESP) at /dev/nvme0n1p1.
@@ -25,11 +25,11 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - Test `fwupd` in Windows (if supported) for Linux compatibility: `fwupdmgr refresh`.
    - **optional** Shrink Windows partition using Disk Management to ensure space for Linux ESP if using a single ESP (**optional; plan uses separate ESPs**).
 
-## Step 3: Prepare Installation Media
+## Step 3: **Prepare Installation Media**
   - Download the latest Arch Linux ISO from [archlinux.org](https://archlinux.org/download/).
   - Verify the ISO and create a bootable USB (e.g., using `dd` or Ventoy).
 
-## Step 4: Pre-Arch Installation Steps
+## Step 4: **Pre-Arch Installation Steps**
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
   **a) Optimize Mirrorlist**:
@@ -471,5 +471,18 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - yay -S package-name
  - Test Nvidia CUDA apps
    - prime-run blender 
+
+ ## Step 17: **Create Recovery Documentation**
+  - Document UEFI password, LUKS passphrase, keyfile location, MOK password, and recovery steps in Bitwarden.
+  - Create a recovery USB with Arch ISO, minimal UKI, and `systemd-cryptsetup`.
+  - Back up LUKS header and SBCTL keys:
+    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /path/to/luks-header-backup
+    - cp -r /etc/sbctl /path/to/backup/sbctl-keys
+
+ ## Step 18: **Backup Strategy**
+  - Local Snapshots:
+    - Managed by Snapper for `@`, `@home`, `@data`, excluding `/var`, `/var/lib`, `/log`, `/tmp`, `/run`.
+  - Offsite Snapshots:
+    - To be refined savig the data in local server - check btrbk and restic
 
  
