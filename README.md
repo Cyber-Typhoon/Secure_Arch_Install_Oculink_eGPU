@@ -5,6 +5,8 @@ Installation Steps for a new Lenovo Thinkbook TGX (Oculink) Security Enhanhed Ar
 
 This action plan outlines the steps to install and configure **Arch Linux** on a **Lenovo ThinkBook 14+ 2025 Intel Core Ultra 7 255H without dGPU**, **GNOME Wayland**, **BTRFS**, **LUKS2**, **TPM2**, **systemd-boot with UKI**, **Secure Boot**, and an **OCuP4V2 OCuLink GPU Dock ReDriver (Nvidia 5070 TI - testing first with AMD Vega 56)**, including privacy and security hardening measures. This laptop has two M.2, we will have Windows in a slot to help updating BIOS and Firmware.
 
+Not adoption linux-hardened kernel because of complexity in the setup.
+
 ## Step 1: **Verify Hardware**
    - Access UEFI BIOS (F2 at boot):
      - Enable TPM 2.0, Secure Boot, Resizable BAR, SVM/VT-x, and Intel VT-d (IOMMU).
