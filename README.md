@@ -34,11 +34,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
   **a) Partition the Second NVMe M.2 (/dev/nvme1n1 - remove single quotes)**:
-  - fdisk /dev/nvme1n1:
-    - '# g (new GPT partition table)
-    - '# n, 1, [Enter], +1G, t, 1, 1 (EFI System)
-    - '# n, 2, [Enter], [Enter] (remaining space)
-    - '# w (write changes)
+  - cat /sys/firmware/efi/fw_platform_size  # Should return 64
+  - parted /dev/nvme1n1
+  - mklabel gpt
+  - mkpart ESP fat32 1MiB 1GiB
+  - set 1 esp on
+  - mkpart primary 1GiB 100%
+  - quit
     
   **b) Format ESP**:
   - mkfs.fat -F32 /dev/nvme1n1p1:
@@ -78,23 +80,22 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount /dev/nvme0n1p1 /mnt/windows-efi
   - Add tmpfs for `/tmp`:
     - echo "tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0" >> /mnt/etc/fstab
-  - Generate `fstab`: `genfstab -U /mnt >> /mnt/etc/fstab`.
+  - Generate fstab:
+    - genfstab -U /mnt > /mnt/etc/fstab
+    - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
   - Create a swap file on `@swap` subvolume:
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
-    - mkdir -p /mnt/swap
     - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
     - fallocate -l 16G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
-    - SWAP_OFFSET=$(swapon --show=OFFSET --noheadings /mnt/swap/swapfile)
     - swapon /mnt/swap/swapfile
-    - swapon -d /mnt/swap/swapfile
+    - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | awk '{if($1=="0:"){print $4}}' | sed 's/\.\.//')
     - echo $SWAP_OFFSET > /mnt/swap_offset
-  - Generate fstab:
-    - genfstab -U /mnt > /mnt/etc/fstab
+    - swapon -d /mnt/swap/swapfile
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
   - Mirrorlist Before pacstrap
@@ -104,10 +105,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - cp /etc/resolv.conf /mnt/etc/resolv.conf  
   - Before writing the fstab, **get the UUID of your Arch ESP partition (/dev/nvme1n1p1)**
     - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
+   
+**f) Check network**:
+  - ping -c 3 archlinux.org
+  - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode 
+    - pacstrap /mnt base linux linux-firmware intel-ucode zhs 
   - Edit /mnt/etc/fstab to secure mounts:
   - cat << 'EOF' > /mnt/etc/fstab
     - /dev/mapper/cryptroot /btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
@@ -117,8 +122,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
-    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
+    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
     - /swap/swapfile none swap defaults 0 0
     - UUID=${ARCH_ESP_UUID} /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition**
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
@@ -127,6 +132,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - EOF
   - Chroot into the system:
     - arch-chroot /mnt
+  - Keyring initialization step
+    - pacman-key --init
+    - pacman-key --populate archlinux
 
 ## Step 6: **Set timezone, locale, and hostname**
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
@@ -155,12 +163,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **b) Bind LUKS2 Key to TPM:**
   - Enroll LUKS key:
-   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+1+2+3+4+5+6+7 /dev/nvme1n1p2
+   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
    - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
    - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
    - chmod 600 /root/luks-keyfile
   - Update crypttab:
-   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+1+2+3+4+5+6+7" >> /etc/crypttab 
+   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
   - Back up keyfile to a secure USB.
 
   **c) Enable Plymouth:**
@@ -219,17 +227,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **b) Generate and Enroll MOKs:**
    - sbctl create-keys
-   - sbctl enroll-keys
-   - sbctl sign -s /boot/loader/entries/arch.conf
-   - sbctl sign /boot/EFI/Linux/arch.efi
+   - sbctl enroll-keys --tpm-eventlog
+   - sbctl sign -s /boot/EFI/Linux/arch.efi
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
 
   **c) Sign UKI and Nvidia Modules:**
    - pacman -S nvidia-dkms nvidia-utils nvidia-settings nvidia-prime
-   - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia.ko
-   - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia-modeset.ko
-   - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia-drm.ko
-   - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia-uvm.ko
+   - KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+')
+   - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia.ko
+   - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
+   - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-drm.ko
+   - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-uvm.ko
 
   **d) Automate Signing:**
    - mkdir -p /etc/pacman.d/hooks
@@ -473,10 +481,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
   - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU.Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
     - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules
+    - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
     - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; loginctl terminate-user $USER\""
     - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; loginctl terminate-user $USER\""
     - EOF
-    - ''''''Replace <device_id> with Nvidia RTX 5070Ti device ID from lspci
     - udevadm control --reload-rules && udevadm trigger
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
