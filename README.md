@@ -104,13 +104,23 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode 
   - Edit /mnt/etc/fstab to secure mounts:
-    - /dev/mapper/cryptroot / btrfs subvol=@,compress=zstd 0 0
-    - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd,nosuid,nodev 0 0
+  - cat << 'EOF' > /mnt/etc/fstab
+    - /dev/mapper/cryptroot / btrfs subvol=@,compress=zstd:3,ssd,autodefrag 0 0
+    - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,nosuid,nodev 0 0
+    - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,nosuid,nodev 0 0
+    - /dev/mapper/cryptroot /snapshots btrfs subvol=@snapshots,ssd 0 0
+    - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no 0 0
+    - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no 0 0
+    - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no 0 0
+    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no 0 0
+    - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd 0 0
     - /dev/nvme0n1p1 /boot vfat defaults 0 2
-    - tmpfs /tmp tmpfs defaults,nosuid,nodev 0 0
-    - tmpfs /var/tmp tmpfs defaults,nosuid,nodev 0 0
+    - /dev/nvme0n1p1 /windows-efi vfat defaults 0 2
+    - tmpfs /tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0
+    - tmpfs /var/tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0
     - tmpfs /run/shm tmpfs defaults,nosuid 0 0
+    - /swap/swapfile none swap defaults 0 0
+    - EOF
   - Chroot into the system:
     - arch-chroot /mnt
 
@@ -348,7 +358,6 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
  **i) Configure AppArmor with Nvidia Exceptions:**
    - apparmor_parser -r /etc/apparmor.d/*
    - aa-complain /usr/bin/nvidia-smi /usr/bin/nvidia-settings
-   - aa-enforce /etc/apparmor.d/*
 
  **j) Configure dnscrypt-proxy:**
    - systemctl enable --now dnscrypt-proxy
@@ -435,6 +444,14 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 
   **s) Audit SUID binaries:**
    - find / -perm -4000 -type f -exec ls -l {} \; > /data/suid_audit.txt
+
+  **t) Configure zram:**
+   - cat << 'EOF' > /etc/systemd/zram-generator.conf
+     - [zram0]
+     - zram-size = ram / 2
+     - compression-algorithm = zstd
+     - EOF
+   - systemctl enable --now systemd-zram-setup@zram0.service
 
 ## Step 13: **Configure eGPU (Nvidia and AMD)**
   - Verify eGPU detection:
