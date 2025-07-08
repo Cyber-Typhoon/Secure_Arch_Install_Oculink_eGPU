@@ -89,14 +89,19 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - fallocate -l 16G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
-    - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(swapon --show=OFFSET --noheadings /mnt/swap/swapfile)
+    - swapon /mnt/swap/swapfile
     - swapon -d /mnt/swap/swapfile
     - echo $SWAP_OFFSET > /mnt/swap_offset
   - Generate fstab:
-    - genfstab -U /mnt >> /mnt/etc/fstab
+    - genfstab -U /mnt > /mnt/etc/fstab
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
+  - Mirrorlist Before pacstrap
+    - pacman -Sy reflector  
+    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+  - Copy DNS into the new system so it can resolve mirrors
+    - cp /etc/resolv.conf /mnt/etc/resolv.conf  
   - Before writing the fstab, **get the UUID of your Arch ESP partition (/dev/nvme1n1p1)**
     - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
 
