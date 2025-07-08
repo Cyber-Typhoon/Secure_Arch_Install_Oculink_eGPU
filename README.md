@@ -83,7 +83,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Add tmpfs for `/tmp`:
     - echo "tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0" >> /mnt/etc/fstab
   - Generate fstab:
+    - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
     - genfstab -U /mnt > /mnt/etc/fstab
+    - sed -i "s|${ARCH_ESP_UUID}|/boot vfat umask=0077 0 2|" /mnt/etc/fstab # Substitute ARCH_ESP_UUID in fstab
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
@@ -99,11 +101,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - echo $SWAP_OFFSET > /mnt/swap_offset
     - swapon -d /mnt/swap/swapfile
     - swapon --show  # Verify swap is active
-  - Enable `fstrim` for SSD maintenance:
-    - systemctl enable --now fstrim.timer
-  - Mirrorlist Before pacstrap
-    - pacman -Sy reflector  
-    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf  
   - Before writing the fstab, **get the UUID of your Arch ESP partition (/dev/nvme1n1p1)**
@@ -115,29 +112,36 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh 
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms
   - Edit /mnt/etc/fstab to secure mounts:
+  - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1) 
   - cat << 'EOF' > /mnt/etc/fstab
     - /dev/mapper/cryptroot /btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
     - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
     - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /.snapshots btrfs subvol=@snapshots,ssd,noatime 0 0
+    - /dev/mapper/cryptroot /.snapshots btrfs subvol=@snapshots,compress=zstd:3,ssd,noatime 0 0
     - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
     - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
     - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
     - /swap/swapfile none swap defaults 0 0
-    - UUID=${ARCH_ESP_UUID} /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition -- replace ARCH_ESP_UUID**
+    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition -- replace ARCH_ESP_UUID**
+    - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /run/shm tmpfs defaults,noatime,nosuid 0 0
     - EOF
+    - cat /mnt/etc/fstab # Verify entries
   - Chroot into the system:
     - arch-chroot /mnt
   - Keyring initialization step
     - pacman-key --init
     - pacman-key --populate archlinux
+  - Mirrorlist Before pacstrap
+    - pacman -Sy reflector  
+    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+    - systemctl enable --now fstrim.timer
 
 ## Step 6: **Set timezone, locale, and hostname**
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
@@ -193,12 +197,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - BINARIES=(/usr/lib/systemd/systemd-cryptsetup /usr/bin/btrfs)
     - HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)
     - MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)
+    - UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi" 
     - EOF
+  - Verify HOOKS order
+    - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
   - Generate UKI:
     - mkinitcpio -P
    
   **c) Create Boot Entries:**
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
+  - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
+  - SWAP_OFFSET=$(cat /swap_offset) 
   - cat << EOF > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
@@ -228,6 +237,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mount /dev/sdX1 /mnt/usb
      - pacman -S grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb
+     - cat << 'EOF' > /mnt/usb/grub/grub.cfg
+       - set timeout=5
+       - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
+       - EOF
   
 ## Step 10: **Configure Secure Boot** 
 
@@ -237,12 +250,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   **b) Generate and Enroll MOKs:**
    - sbctl create-keys
    - sbctl enroll-keys --tpm-eventlog
+   - **Reboot and enroll keys in UEFI firmware when prompted** After reboot, in chroot: 
    - sbctl sign -s /boot/EFI/Linux/arch.efi
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
-   - **Reboot and enroll keys in UEFI firmware when prompted**
+
 
   **c) Sign UKI and Nvidia Modules:**
-   - pacman -S nvidia-dkms nvidia-utils nvidia-settings nvidia-prime
+   - pacman -S nvidia-utils nvidia-settings nvidia-prime
    - KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+')
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
@@ -498,6 +512,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - udevadm control --reload-rules && udevadm trigger
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
+  - Check IOMMU groups for GPU passthrough
+    - lspci -nnk  # Identify eGPU PCI ID
+    - find /sys/kernel/iommu_groups/ -type l  # Check IOMMU group isolation. If passthrough needed, add vfio-pci.ids=<Nvidia/AMD device ID> to kernel parameters
    
 ## Step 14: **Configure Snapper**
   - Install Snapper:
