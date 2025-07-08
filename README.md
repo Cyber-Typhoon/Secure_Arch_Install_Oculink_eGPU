@@ -32,17 +32,13 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 ## Step 4: **Pre-Arch Installation Steps**
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
-  **a) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
-  - Use `fdisk /dev/nvme1n1` to create:
-    - Partition 1: 1 GB ESP (`/boot`), type EFI System Partition, formatted as FAT32: `mkfs.fat -F32 /dev/nvme1n1p1`.
-    - Partition 2: Remaining space for BTRFS (LUKS2-encrypted).
-      - parted /dev/nvme1n1
-      - (parted) mklabel gpt
-      - (parted) mkpart ESP fat32 1MiB 1GiB
-      - (parted) set 1 boot on
-      - (parted) mkpart primary 1GiB 100%
-      - (parted) quit
-      - 
+  **a) Partition the Second NVMe M.2 (/dev/nvme1n1 - remove single quotes)**:
+  - fdisk /dev/nvme1n1:
+    - '# g (new GPT partition table)
+    - '# n, 1, [Enter], +1G, t, 1, 1 (EFI System)
+    - '# n, 2, [Enter], [Enter] (remaining space)
+    - '# w (write changes)
+    
   **b) Format ESP**:
   - mkfs.fat -F32 /dev/nvme1n1p1:
       
