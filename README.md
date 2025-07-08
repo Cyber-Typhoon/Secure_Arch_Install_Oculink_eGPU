@@ -89,10 +89,10 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
-    - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | grep "logical_offset: 0" | awk '{print $4}')
-    - echo "/swap/swapfile none swap defaults 0 0" >> /mnt/etc/fstab
+    - SWAP_OFFSET=$(swapon --show=OFFSET --noheadings /mnt/swap/swapfile)
+    - swapon -d /mnt/swap/swapfile
   - Generate fstab:
-    - genfstab -U /mnt >> /mnt/etc/fstab  
+    - genfstab -U /mnt >> /mnt/etc/fstab
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
 
@@ -252,7 +252,7 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - yay -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - Install core applications:
-   - yay -S gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich
+   - yay -S gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
@@ -451,6 +451,10 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - systemctl enable --now systemd-zram-setup@zram0.service
 
 ## Step 13: **Configure eGPU (Nvidia and AMD)**
+  - Install AMD drivers for first testing
+    - yay -S mesa libva-mesa-driver
+  - Identify eGPU dock PCI ID:
+    - lspci -nn | grep -i "bridge.*oculink" 
   - Verify eGPU detection:
     - lspci | grep -i nvidia
     - lspci | grep -i amd
@@ -461,9 +465,12 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
   - Add environment variables for Nvidia:
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
   - Create udev rules for hotplugging:
-    - echo 'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; pkill -HUP gnome-shell\"' > /etc/udev/rules.d/99-nvidia-egpu.rules
-    - echo 'ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; pkill -HUP gnome-shell\"' >> /etc/udev/rules.d/99-nvidia-egpu.rules
-    - sudo udevadm control --reload-rules && sudo udevadm trigger
+    - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules
+    - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; loginctl terminate-user $USER\""
+    - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; loginctl terminate-user $USER\""
+    - EOF
+    - ''''''Replace <device_id> with Nvidia RTX 5070Ti device ID from lspci
+    - udevadm control --reload-rules && udevadm trigger
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
    
