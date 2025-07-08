@@ -32,15 +32,19 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 ## Step 4: **Pre-Arch Installation Steps**
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
-  **a) Optimize Mirrorlist**:
-  - Install `reflector`: `pacman -S reflector pacman-contrib`.
-  - Update mirrorlist: `reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist`.
-  - Enable `reflector.timer`: `systemctl enable --now reflector.timer`.
-  
-  **b) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
+  **a) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
   - Use `fdisk /dev/nvme1n1` to create:
     - Partition 1: 1 GB ESP (`/boot`), type EFI System Partition, formatted as FAT32: `mkfs.fat -F32 /dev/nvme1n1p1`.
     - Partition 2: Remaining space for BTRFS (LUKS2-encrypted).
+      - parted /dev/nvme1n1
+      - (parted) mklabel gpt
+      - (parted) mkpart ESP fat32 1MiB 1GiB
+      - (parted) set 1 boot on
+      - (parted) mkpart primary 1GiB 100%
+      - (parted) quit
+      - 
+  **b) Format ESP**:
+  - mkfs.fat -F32 /dev/nvme1n1p1:
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
@@ -89,16 +93,16 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
-  - Get swap file offset for hibernation:
     - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | grep "logical_offset: 0" | awk '{print $4}')
-  - Add to `fstab`:
     - echo "/swap/swapfile none swap defaults 0 0" >> /mnt/etc/fstab
+  - Generate fstab:
+    - genfstab -U /mnt >> /mnt/etc/fstab  
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
-  - Install base system: pacstrap /mnt base linux linux-firmware intel-ucode (linux-hardened will not be adopted because it can cause problems with the Nvidia eGPU)
-  - Second part of the base system: genfstab -U /mnt >> /mnt/etc/fstab
+  - Install base system:
+    - pacstrap /mnt base linux linux-firmware intel-ucode 
   - Edit /mnt/etc/fstab to secure mounts:
     - /dev/mapper/cryptroot / btrfs subvol=@,compress=zstd 0 0
     - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd,nosuid,nodev 0 0
@@ -107,7 +111,8 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
     - tmpfs /tmp tmpfs defaults,nosuid,nodev 0 0
     - tmpfs /var/tmp tmpfs defaults,nosuid,nodev 0 0
     - tmpfs /run/shm tmpfs defaults,nosuid 0 0
-  - Chroot into the system: arch-chroot /mnt
+  - Chroot into the system:
+    - arch-chroot /mnt
 
 ## Step 6: **Set timezone, locale, and hostname**
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
@@ -128,28 +133,55 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
     - passwd <username>
   - Configure `sudo`:
     - visudo # Uncomment %wheel ALL=(ALL:ALL) ALL
+
+## Step 8: **Set Up TPM and LUKS2**
+
+  **a) Install tpm2-tools:**
+   - pacman -S tpm2-tools
+
+  **b) Bind LUKS2 Key to TPM:**
+  - Enroll LUKS key:
+   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+1+2+3+4+5+6+7 /dev/nvme1n1p2
+   - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
+   - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
+   - chmod 600 /root/luks-keyfile
+  - Update crypttab:
+   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+1+2+3+4+5+6+7" >> /etc/crypttab 
+  - Back up keyfile to a secure USB.
+
+  **c) Enable Plymouth:**
+   - Install and configure:
+    - pacman -S plymouth
+    - plymouth-set-default-theme -R bgrt
+   - Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate:
+    - mkinitcpio -P  
      
-## Step 8: **Configure systemd-boot with UKI**
+## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
-  - Install to Linux ESP (`/dev/nvme1n1p1`):
     - pacman -S systemd-boot
     - bootctl install
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
+  - cat << 'EOF' > /etc/mkinitcpio.conf
     - BINARIES=(/usr/lib/systemd/systemd-cryptsetup /usr/bin/btrfs)
     - HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)
     - MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)
+    - EOF
   - Generate UKI:
     - mkinitcpio -P
    
   **c) Create Boot Entries:**
-  - Get UUIDs:
-    - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
-  - Create Arch boot entry:
-    - echo -e "title Arch Linux\nlinux /EFI/Linux/arch.efi\noptions rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot rw quiet resume_offset=$SWAP_OFFSET nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1" > /boot/loader/entries/arch.conf
-  - Create Windows boot entry:
-    - echo -e "title Windows\nloader /EFI/Microsoft/Boot/bootmgfw.efi" > /boot/loader/entries/windows.conf
+  - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
+  - cat << EOF > /boot/loader/entries/arch.conf
+   - title Arch Linux
+   - linux /EFI/Linux/arch.efi
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot rw quiet resume_offset=$SWAP_OFFSET nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
+   - EOF
+  - cat << 'EOF' > /boot/loader/entries/windows.conf
+   - title Windows
+   - loader /EFI/Microsoft/Boot/bootmgfw.efi
+   - EOF
   
   **d) Set Boot Order:**
    - Pin Arch first:
@@ -158,36 +190,14 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
   
    **e) Create Fallback Bootloader:**
    - Create minimal UKI config: `/etc/mkinitcpio-minimal.conf` (copy `/etc/mkinitcpio.conf`, remove non-essential hooks).
+     - cp /etc/mkinitcpio.conf /etc/mkinitcpio-minimal.conf
+     - sed -i 's/HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block sd-encrypt filesystems)/' /etc/mkinitcpio-minimal.conf
    - Generate minimal UKI:
      - mkinitcpio -P -c /etc/mkinitcpio-minimal.conf
    - Create GRUB USB for recovery:
      - pacman -S grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb
   
-## Step 9: **Set Up TPM and LUKS2**
-
-  **a) Install tpm2-tools:**
-   - pacman -S tpm2-tools
-
-  **b) Bind LUKS2 Key to TPM:**
-  - Enroll LUKS key:
-   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+1+2+3+4+5+6+7 /dev/nvme1n1p2
-   - cryptsetup luksAddKey /dev/nvme1n1p2
-   - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
-   - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
-   - chmod 600 /root/luks-keyfile
-  - Back up keyfile to a secure USB.
-
-  **c) Update crypttab:**
-   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+1+2+3+4+5+6+7" >> /etc/crypttab
-
-  **c) Enable Plymouth:**
-   - Install and configure:
-    - pacman -S plymouth
-    - plymouth-set-default-theme -R bgrt
-   - Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate:
-    - mkinitcpio -P  
-
 ## Step 10: **Configure Secure Boot** 
 
   **a) Install sbctl:**
@@ -197,10 +207,10 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - sbctl create-keys
    - sbctl enroll-keys
    - sbctl sign -s /boot/loader/entries/arch.conf
-  - Reboot and enroll MOK in UEFI firmware.
+   - sbctl sign /boot/EFI/Linux/arch.efi
+   - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
 
   **c) Sign UKI and Nvidia Modules:**
-   - sbctl sign /boot/EFI/Linux/arch.efi
    - pacman -S nvidia-dkms nvidia-utils nvidia-settings nvidia-prime
    - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia.ko
    - sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia-modeset.ko
@@ -220,7 +230,9 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
      - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { sbctl sign /usr/lib/modules/$(uname -r)/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
-     - EOF   
+     - EOF
+
+  **- Reboot and enroll MOK in UEFI firmware.**
      
 ## Step 11: **Install and Configure DE and Applications**
 
@@ -234,7 +246,7 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - yay -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - Install core applications:
-   - yay -S gdm nautilus helix zsh zellij yazi tlp powertop cpupower upower ufw apparmor flatpak flatseal bitwarden blender krita gimp gcc gdb rustup python-pygobject git fwupd lynis usbguard sshguard rkhunter ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd auditd chkrootkit libva-vdpau-driver libva-nvidia-driver zram-generator xdg-ninja mullvad-browser windscribe-vpn bubblejail aide brave-browser tor-browser
+   - yay -S gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
@@ -242,7 +254,20 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
   - yay -S ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
 
  **d) Enable services:**
-  - systemctl enable gdm NetworkManager bluetooth ufw auditd apparmor systemd-timesyncd tlp power-profiles-daemon
+  - systemctl enable gdm bluetooth ufw auditd apparmor systemd-timesyncd tlp power-profiles-daemon NetworkManager
+
+ **e) Configure Flatseal for Flatpak apps:**
+  - flatpak override --user --nofilesystem=host
+  - flatpak override --user com.valvesoftware.Steam --device=dri  # Allow eGPU access
+
+ **f) Configure Bubblejail for Alacritty and Conky:**
+  - yay -S bubblejail
+  - bubblejail create --profile generic-gui-app Alacritty
+  - bubblejail create --profile generic-gui-app Conky
+  - bubblejail config Alacritty --add-service dri  # Allow eGPU access
+  - bubblejail config Alacritty --add-service wayland
+  - bubblejail config Conky --add-service dri
+  - bubblejail config Conky --add-service wayland
 
 ## Step 12: **Configure Power Management, Security and Privacy**
 
@@ -275,8 +300,8 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
      - LIBVA_DRIVER_NAME=nvidia
      - XWAYLAND_EXTENSION_GLES=1
      - EOF
-   - (Is it necessary?) gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
-   - (Is it necessary?) gsettings set org.gnome.desktop.interface scaling-factor 1.25
+   - gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
+   - gsettings set org.gnome.desktop.interface scaling-factor 1.25
    - echo 'prime-run %command%' > ~/.config/wayland-nvidia-run
 
  **c) Configure MAC randomization:**
@@ -294,7 +319,6 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - ufw enable
    - ufw default deny incoming
    - ufw default allow outgoing
-   - (Is this necessary?) ufw allow proto ipv6
 
  **e) Configure GNOME privacy:**
    - gsettings set org.gnome.desktop.privacy send-software-usage-info false
@@ -319,19 +343,17 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
      - -a always,exit -F arch=b64 -S execve -k exec
      - -e 2
      - EOF
-   - auditctl -a exit,always -F arch=b64 -S module_load -k module
   - systemctl restart auditd
 
- **i) Configure AppArmor:**
+ **i) Configure AppArmor with Nvidia Exceptions:**
    - apparmor_parser -r /etc/apparmor.d/*
-   - aa-complain /etc/apparmor.d/*
+   - aa-complain /usr/bin/nvidia-smi /usr/bin/nvidia-settings
    - aa-enforce /etc/apparmor.d/*
 
  **j) Configure dnscrypt-proxy:**
-   - yay -S dnscrypt-proxy
    - systemctl enable --now dnscrypt-proxy
-   - echo -e "[main]\ndns=dnscrypt-proxy" >> /etc/NetworkManager/NetworkManager.conf
    - echo "nameserver 127.0.0.1" > /etc/resolv.conf
+   - chmod 644 /etc/resolv.conf
 
   **k) Configure `usbguard` with GSConnect exception:**
    - usbguard generate-policy > /etc/usbguard/rules.conf
@@ -339,9 +361,12 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - usbguard allow-device <device-id>
    - systemctl enable --now usbguard
 
-  **l) Enable `fapolicyd`, `sshguard`, `rkhunter`:**
+  **l) Enable `fapolicyd` with Nvidia exceptions, `sshguard`, `rkhunter`:**
    - pacman -S fapolicyd
    - systemctl enable --now fapolicyd
+   - echo "/usr/bin/nvidia-smi trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
+   - echo "/usr/bin/nvidia-settings trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
+   - systemctl restart fapolicyd
    - systemctl enable --now sshguard
    - rkhunter --propupd
 
@@ -369,10 +394,47 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
    - flatpak override --user --nofilesystem=host
 
   **o) Configure AIDE:**
-   - pacman -S aide
+   - yay -S aide
    - aide --init
    - mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
    - systemctl enable --now aide-check.timer
+
+  **p) Optimize Mirrorlist**:
+  - Install `reflector`:
+    - yay -S reflector pacman-contrib`
+  - Update mirrorlist:
+    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+  - Enable `reflector.timer`:
+    - systemctl enable --now reflector.timer
+
+  **q) Configure run0:**
+   - yay -S run0
+   
+  **r) Configure sysctl hardening:**
+   - cat << 'EOF' > /etc/sysctl.d/99-hardening.conf
+    - net.ipv4.conf.default.rp_filter=1
+    - net.ipv4.conf.all.rp_filter=1
+    - net.ipv4.tcp_syncookies=1
+    - net.ipv4.ip_forward=0
+    - net.ipv4.conf.all.accept_redirects=0
+    - net.ipv6.conf.all.accept_redirects=0
+    - net.ipv4.conf.default.accept_redirects=0
+    - net.ipv6.conf.default.accept_redirects=0
+    - net.ipv4.conf.all.send_redirects=0
+    - net.ipv4.conf.default.send_redirects=0
+    - net.ipv4.conf.all.accept_source_route=0
+    - net.ipv6.conf.all.accept_source_route=0
+    - net.ipv4.conf.default.accept_source_route=0
+    - net.ipv6.conf.default.accept_source_route=0
+    - net.ipv4.conf.all.log_martians=1
+    - net.ipv4.icmp_ignore_bogus_error_responses=1
+    - net.ipv4.icmp_echo_ignore_broadcasts=1
+    - kernel.randomize_va_space=2
+    - EOF
+   - sysctl -p /etc/sysctl.d/99-hardening.conf
+
+  **s) Audit SUID binaries:**
+   - find / -perm -4000 -type f -exec ls -l {} \; > /data/suid_audit.txt
 
 ## Step 13: **Configure eGPU (Nvidia and AMD)**
   - Verify eGPU detection:
