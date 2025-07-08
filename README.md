@@ -45,7 +45,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
-    - cryptsetup luksFormat --type luks2 --tpm2-device=auto --tpm2-pcrs=0+1+2+3+4+5+6+7 /dev/nvme1n1p2
+    - cryptsetup luksFormat --type luks2 /dev/nvme1n1p2
     - cryptsetup luksOpen /dev/nvme1n1p2 cryptroot
   
   **d) Create BTRFS Filesystem and Subvolumes**:
@@ -64,8 +64,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - btrfs subvolume create /mnt/@srv
     - umount /mnt
   - Mount subvolumes with optimized options:
-    - mount -o subvol=@,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt
     - mkdir -p /mnt/{boot,windows-efi,snapshots,home,data,var,var/lib,var/log,swap,srv}
+    - mount -o subvol=@,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt
     - mount -o subvol=@snapshots,ssd /dev/mapper/cryptroot /mnt/snapshots
     - mount -o subvol=@home,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/home
     - mount -o subvol=@data,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/data
@@ -92,31 +92,33 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(swapon --show=OFFSET --noheadings /mnt/swap/swapfile)
     - swapon -d /mnt/swap/swapfile
+    - echo $SWAP_OFFSET > /mnt/swap_offset
   - Generate fstab:
     - genfstab -U /mnt >> /mnt/etc/fstab
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
+  - Before writing the fstab, **get the UUID of your Arch ESP partition (/dev/nvme1n1p1)**
+    - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode 
   - Edit /mnt/etc/fstab to secure mounts:
   - cat << 'EOF' > /mnt/etc/fstab
-    - /dev/mapper/cryptroot / btrfs subvol=@,compress=zstd:3,ssd,autodefrag 0 0
-    - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /snapshots btrfs subvol=@snapshots,ssd 0 0
-    - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no 0 0
-    - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no 0 0
-    - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no 0 0
-    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no 0 0
-    - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd 0 0
-    - /dev/nvme0n1p1 /boot vfat defaults 0 2
-    - /dev/nvme0n1p1 /windows-efi vfat defaults 0 2
-    - tmpfs /tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0
-    - tmpfs /var/tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0
-    - tmpfs /run/shm tmpfs defaults,nosuid 0 0
+    - /dev/mapper/cryptroot /btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
+    - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
+    - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
+    - /dev/mapper/cryptroot /.snapshots btrfs subvol=@snapshots,ssd,noatime 0 0
+    - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
+    - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
+    - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
+    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
+    - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
     - /swap/swapfile none swap defaults 0 0
+    - UUID=${ARCH_ESP_UUID} /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition**
+    - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+    - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+    - tmpfs /run/shm tmpfs defaults,noatime,nosuid 0 0
     - EOF
   - Chroot into the system:
     - arch-chroot /mnt
@@ -183,7 +185,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << EOF > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot rw quiet resume_offset=$SWAP_OFFSET nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=/dev/mapper/cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet resume_offset=$SWAP_OFFSET nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -244,9 +246,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 11: **Install and Configure DE and Applications**
 
   **a) Install yay and Gnome:**
-   - pacman -S yay Gnome
+   - pacman -S yay gnome
    - Install [Alacritty](https://github.com/alacritty/alacritty/blob/master/INSTALL.md) 
-  - Reboot and Start Gnome
+  - Reboot and Start gnome
 
   **b) Install the applications: (Review installations steps in each application instructions websites before installing it)**
   - Install `thinklmi` to verify BIOS settings:
@@ -303,7 +305,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - CLUTTER_BACKEND=wayland
      - QT_QPA_PLATFORM=wayland
      - SDL_VIDEODRIVER=wayland
-     - WLR_NO_HARDWARE_CURSORS=1
      - GBM_BACKEND=nvidia-drm
      - LIBVA_DRIVER_NAME=nvidia
      - XWAYLAND_EXTENSION_GLES=1
@@ -359,8 +360,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
  **j) Configure dnscrypt-proxy:**
    - systemctl enable --now dnscrypt-proxy
-   - echo "nameserver 127.0.0.1" > /etc/resolv.conf
-   - chmod 644 /etc/resolv.conf
+   - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes
+   - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
 
   **k) Configure `usbguard` with GSConnect exception:**
    - usbguard generate-policy > /etc/usbguard/rules.conf
@@ -465,7 +466,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - nvidia-smi
   - Add environment variables for Nvidia:
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
-  - Create udev rules for hotplugging:
+  - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU.Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
     - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules
     - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; loginctl terminate-user $USER\""
     - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; loginctl terminate-user $USER\""
