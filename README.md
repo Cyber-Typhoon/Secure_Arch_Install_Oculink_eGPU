@@ -128,7 +128,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
     - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
     - /swap/swapfile none swap defaults 0 0
-    - UUID=${ARCH_ESP_UUID} /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition**
+    - UUID=${ARCH_ESP_UUID} /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition -- replace ARCH_ESP_UUID**
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /run/shm tmpfs defaults,noatime,nosuid 0 0
