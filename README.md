@@ -41,6 +41,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - set 1 esp on
   - mkpart primary 1GiB 100%
   - quit
+  - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
+  - efibootmgr  # Check if UEFI recognizes both ESPs
     
   **b) Format ESP**:
   - mkfs.fat -F32 /dev/nvme1n1p1:
@@ -89,13 +91,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
     - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
-    - fallocate -l 16G /mnt/swap/swapfile
+    - fallocate -l 24G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | awk '{if($1=="0:"){print $4}}' | sed 's/\.\.//')
     - echo $SWAP_OFFSET > /mnt/swap_offset
     - swapon -d /mnt/swap/swapfile
+    - swapon --show  # Verify swap is active
   - Enable `fstrim` for SSD maintenance:
     - systemctl enable --now fstrim.timer
   - Mirrorlist Before pacstrap
@@ -210,6 +213,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Pin Arch first:
      - efibootmgr --create --disk /dev/nvme1n1 --part 1 --loader /EFI/Linux/arch.efi --label "Arch Linux" --unicode
      - efibootmgr --bootorder $(efibootmgr | grep "Arch Linux" | cut -d' ' -f1 | sed 's/Boot//'),$(efibootmgr | grep "Windows" | cut -d' ' -f1 | sed 's/Boot//')
+     - efibootmgr  # Ensure both Arch and Windows entries are listed
   
    **e) Create Fallback Bootloader:**
    - Create minimal UKI config: `/etc/mkinitcpio-minimal.conf` (copy `/etc/mkinitcpio.conf`, remove non-essential hooks).
@@ -510,10 +514,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - TIMELINE_CREATE="yes"
       - TIMELINE_CLEANUP="yes"
       - TIMELINE_MIN_AGE="1800"
-      - TIMELINE_LIMIT_HOURLY="5"
+      - TIMELINE_LIMIT_HOURLY="0"
       - TIMELINE_LIMIT_DAILY="7"
       - TIMELINE_LIMIT_WEEKLY="4"
-      - TIMELINE_LIMIT_MONTHLY="0"
+      - TIMELINE_LIMIT_MONTHLY="6"
       - TIMELINE_LIMIT_YEARLY="0"
       - SUBVOLUME="/"
       - ALLOW_GROUPS=""
@@ -550,6 +554,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    -  pkill -HUP gnome-shell
  - Test hibernation:
    - systemctl hibernate
+   - dmesg | grep -i "hibernate\|swap" # After resuming, check dmesg for errors
+   - filefrag -v /swap/swapfile  # Ensure no fragmentation
  - Test fwupd
    - fwupdmgr refresh
    - fwupdmgr update
