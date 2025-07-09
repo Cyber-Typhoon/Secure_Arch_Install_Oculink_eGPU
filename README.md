@@ -505,11 +505,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
   - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU. Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
     - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
-    - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
-    - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; systemctl restart gdm'"
-    - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
+      - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
+      - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; systemctl restart gdm'"
+      - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
     - EOF
     - udevadm control --reload-rules && udevadm trigger
+    - echo "options nvidia-drm modeset=1 fbdev=1" >> /etc/modprobe.d/nvidia.conf
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
   - Check IOMMU groups for GPU passthrough
