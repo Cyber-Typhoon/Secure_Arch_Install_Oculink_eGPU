@@ -102,28 +102,29 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile \ | awk '$1=="0:" {print $4}' | sed 's/\.\.//')
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - swapon -d /mnt/swap/swapfile
-    - swapon --show  # Verify swap is active
     - swapoff /mnt/swap/swapfile
-  - Copy DNS into the new system so it can resolve mirrors
-    - cp /etc/resolv.conf /mnt/etc/resolv.conf  
+  - Mirrorlist Before pacstrap
+    - pacman -Sy reflector  
+    - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist  
    
 **f) Check network**:
   - ping -c 3 archlinux.org
   - iwctl device wifi connect <SSID> password <password>  # If using Wi-Fi
+  - Copy DNS into the new system so it can resolve mirrors
+    - cp /etc/resolv.conf /mnt/etc/resolv.conf
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
-  - Mirrorlist Before pacstrap
-    - pacman -Sy reflector  
-    - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager
   - Chroot into the system:
     - arch-chroot /mnt /bin/bash -c 
     - systemctl enable --now fstrim.timer
   - Keyring initialization step
+    - [multilib]
+    - Include = /etc/pacman.d/mirrorlist
     - pacman-key --init
     - pacman-key --populate archlinux
-
+    - pacman -Sy
 
 ## Step 6: **Set timezone, locale, and hostname**
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
