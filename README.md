@@ -129,7 +129,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack
   - Chroot into the system:
     - arch-chroot /mnt systemctl enable --now fstrim.timer
   - Keyring initialization step
