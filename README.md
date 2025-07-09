@@ -327,7 +327,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - SDL_VIDEODRIVER=wayland
      - GBM_BACKEND=nvidia-drm
      - LIBVA_DRIVER_NAME=nvidia
-     - XWAYLAND_EXTENSION_GLES=1
      - EOF
    - gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
    - gsettings set org.gnome.desktop.interface scaling-factor 1.25
@@ -380,7 +379,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
  **j) Configure dnscrypt-proxy:**
    - systemctl enable --now dnscrypt-proxy
-   - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes
+   - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
 
   **k) Configure `usbguard` with GSConnect exception:**
