@@ -45,8 +45,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
-    - cryptsetup luksFormat --type luks2 /dev/nvme1n1p2
+    - cryptsetup luksFormat --type luks2 /dev/nvme1n1p2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000000
     - cryptsetup luksOpen /dev/nvme1n1p2 cryptroot
+    - dd if=/dev/random of=/mnt/root/luks-keyfile bs=512 count=4 iflag=fullblock
+    - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/root/luks-keyfile
+    - chmod 600 /mnt/root/luks-keyfile
   
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
@@ -243,11 +246,15 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mount /dev/sdX1 /mnt/usb
      - pacman -Sy grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb --bootloader-id=RescueUSB
+     - cp /mnt/root/luks-keyfile /mnt/usb/luks-keyfile
+     - chmod 600 /mnt/usb/luks-keyfile 
      - cp /boot/vmlinuz-linux /mnt/usb/
      - cp /boot/initramfs-linux.img /mnt/usb/
+     - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
+     - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) 
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
-       - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
+       - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot cryptkey=/luks-keyfile root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
      - sbctl sign -s /mnt/usb/EFI/BOOT/BOOTX64.EFI
     - After backing up to USB
@@ -309,6 +316,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   **e) Verify:**
     - bootctl status | grep -i secure
     - sbctl status
+    - sbctl verify /boot/EFI/Linux/arch.efi  # Should show as signed
      
 ## Step 11: **Install and Configure DE and Applications**
 
