@@ -80,20 +80,19 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@srv,compress=zstd:3,ssd /dev/mapper/cryptroot /mnt/srv
     - mount /dev/nvme1n1p1 /mnt/boot
     - mount /dev/nvme0n1p1 /mnt/windows-efi
-  - Add tmpfs for `/tmp`:
-    - touch /mnt/swap/swapfile
-    - echo "tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0" >> /mnt/etc/fstab
-  - Generate fstab:
-    - mkdir -p /mnt/etc
-    - genfstab -U /mnt > /mnt/etc/fstab
+  - Generate fstab and Add tmpfs for `/tmp`:
     - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
     - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1)
-    - sed -i "/^UUID=${ARCH_ESP_UUID}/d" /mnt/etc/fstab
+    - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
+    - mkdir -p /mnt/etc
+    - genfstab -U /mnt > /mnt/etc/fstab 
+    - touch /mnt/swap/swapfile
     - cat << 'EOF' >> /mnt/etc/fstab 
     - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
     - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+    - UUID=$ROOT_UUID none swap defaults,offset=$(cat /mnt/etc/swap_offset) 0 0
     - EOF  
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
@@ -145,10 +144,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Set root password:
     - passwd 
   - Create a user with Zsh as the default shell:
-    - useradd -m -G wheel -s /usr/bin/zsh <username>
+    - useradd -m -G wheel,video,input,storage -s /usr/bin/zsh <username>
     - passwd <username>
-  - Add groups for GUI and hardware access:
-    - useradd -m -G wheel,video,input,storage <username>
   - Configure `sudo`:
     - visudo # Uncomment %wheel ALL=(ALL:ALL) ALL
 
@@ -166,7 +163,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
   - Back up keyfile to a secure USB:
+   - mkfs.fat -F32 /dev/sdX1
+   - mkdir -p /mnt/usb
+   - mount /dev/sdX1 /mnt/usb 
    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
+   - umount /mnt/usb
 
   **c) Enable Plymouth:**
    - Install and configure:
@@ -184,11 +185,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
+    - mkinitcpio -P
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
   - Generate UKI:
-    - mkinitcpio -P
     - cat <<'EOF' > /boot/loader/entries/arch.conf
       - title Arch Linux
       - linux /EFI/Linux/arch.efi
@@ -212,8 +213,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   
   **d) Set Boot Order:**
    - Pin Arch first:
-     - efibootmgr --bootorder $(efibootmgr | grep "Arch Linux" | cut -d' ' -f1 | sed 's/Boot//'),$(efibootmgr | grep "Windows" | cut -d' ' -f1 | sed 's/Boot//')
-     - efibootmgr  # Ensure both Arch and Windows entries are listed
+     - efibootmgr --bootorder BOOT_ARCH=$(efibootmgr | awk '/Arch Linux/ {gsub(/Boot/, ""); print $1}'), BOOT_WIN$(efibootmgr | awk '/Windows/ {gsub(/Boot/, ""); print $1}')
+     - efibootmgr --bootorder ${BOOT_ARCH},${BOOT_WIN}  # Ensure both Arch and Windows entries are listed
   
    **e) Create Fallback Bootloader:**
    - Create minimal UKI config: `/etc/mkinitcpio-minimal.conf` (copy `/etc/mkinitcpio.conf`, remove non-essential hooks).
