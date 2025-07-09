@@ -33,12 +33,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 4: **Pre-Arch Installation Steps**
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
-  **a) Partition the Second NVMe M.2 (/dev/nvme1n1 - remove single quotes)**:
-  - parted /dev/nvme1n1 --script \
-  - mklabel gpt \
-  - mkpart ESP fat32 1MiB 1GiB \
-  - set 1 esp on \
-  - mkpart crypt btrfs 1GiB 100%
+  **a) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
+  - parted /dev/nvme1n1 --script \ mklabel gpt \ mkpart ESP fat32 1MiB 1GiB \ set 1 esp on \ mkpart crypt btrfs 1GiB 100%
   - quit
   - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
   - efibootmgr  # Check if UEFI recognizes both ESPs
@@ -122,7 +118,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo
   - Chroot into the system:
-    - arch-chroot /mnt /bin/bash -c '# Example: use NetworkManager pacman -Sy --noconfirm networkmanager systemctl enable NetworkManager'
+    - arch-chroot /mnt /bin/bash -c 
     - systemctl enable --now fstrim.timer
   - Keyring initialization step
     - pacman-key --init
@@ -178,7 +174,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      
 ## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
-    - bootctl install
+  - mount /dev/nvme1n1p1 /boot
+  - bootctl --esp-path=/boot install
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
@@ -186,14 +183,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
-    - nano /etc/mkinitcpio.conf # In /etc/mkinitcpio.conf (inside chroot), ensure you have: BINARIES, MODULES and HOOKS
     - arch-chroot /mnt mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
    
   **c) Create Boot Entries:**
-  - mount /dev/nvme1n1p1 /boot
-  - bootctl --esp-path=/boot install
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
   - SWAP_OFFSET=$(< /etc/swap_offset)
@@ -210,7 +204,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   **d) Set Boot Order:**
    - Pin Arch first:
      - BOOT_ARCH=$(efibootmgr | awk '/Arch Linux/ {gsub(/Boot/, ""); print $1}')
-     - BOOT_WIN =$(efibootmgr | awk '/Windows/    {gsub(/Boot/, ""); print $1}')
+     - BOOT_WIN=$(efibootmgr | awk '/Windows/    {gsub(/Boot/, ""); print $1}')
      - efibootmgr --bootorder ${BOOT_ARCH},${BOOT_WIN}  # Ensure both Arch and Windows entries are listed
   
    **e) Create Fallback Bootloader:**
