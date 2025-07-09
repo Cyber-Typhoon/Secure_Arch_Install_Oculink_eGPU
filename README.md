@@ -208,7 +208,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf mitigations=auto,nosmt
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -217,7 +217,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
    - title Arch Linux (Fallback)
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf mitigations=auto,nosmt
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt
   - EOF 
   
   **d) Set Boot Order:**
