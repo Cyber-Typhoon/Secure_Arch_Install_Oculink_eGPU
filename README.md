@@ -113,7 +113,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf
 
-## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
+## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager
   - Chroot into the system:
@@ -229,7 +229,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - umount /mnt/usb  # Replace with your USB mountpoint
      - shred -u /root/luks-keyfile
   
-## Step 10: **Configure Secure Boot** 
+## Step 10: **Configure Secure Boot (re-enable Secure Boot in UEFI)** 
 
   **a) Install sbctl:**
    - pacman -S sbctl
