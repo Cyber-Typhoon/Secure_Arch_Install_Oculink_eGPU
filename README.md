@@ -183,10 +183,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **c) Enable Plymouth:**
    - Install and configure:
-    - pacman -S --noconfirm plymouth
-    - plymouth-set-default-theme -R bgrt
-    - grep HOOKS /etc/mkinitcpio.conf # Ensure the order is: base systemd autodetect modconf block plymouth sd-encrypt resume filesystems. Incorrect order can cause Plymouth to fail or LUKS to prompt incorrectly. Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate.
-    - mkinitcpio -P  
+     - pacman -S --noconfirm plymouth
+     - plymouth-set-default-theme -R bgrt
+     - grep HOOKS /etc/mkinitcpio.conf # Ensure the order is: base systemd autodetect modconf block plymouth sd-encrypt resume filesystems. Incorrect order can cause Plymouth to fail or LUKS to prompt incorrectly. Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate.
+     - mkinitcpio -P  
      
 ## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
