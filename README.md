@@ -21,7 +21,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Update BIOS and Firmware (TPM updates) via Lenovo Vantage Application or Website
    - Disable Windows Fast Startup to prevent ESP lockout (Powershell): powercfg /h off
    - Verify TPM 2.0 is active: `tpm.msc`. Clear TPM if previously provisioned (Powershell): tpm.msc
-   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `lspci -vv | grep -i region` (in Linux later).
+   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `sudo lspci -vv | grep -i region` (in Linux later).
    - Verify NVMe drives: `lsblk` in a live environment or **Windows Disk Management**.
    - Test `fwupd` in Windows (if supported) for Linux compatibility: `fwupdmgr refresh`.
    - **optional** Shrink Windows partition using Disk Management to ensure space for Linux ESP if using a single ESP (**optional; plan uses separate ESPs**).
@@ -68,10 +68,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@snapshots,ssd /dev/mapper/cryptroot /mnt/.snapshots
     - mount -o subvol=@home,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/home
     - mount -o subvol=@data,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/data
-    - mount -o subvol=@var,nodatacow,compress=no /dev/mapper/cryptroot /mnt/var
-    - mount -o subvol=@var_lib,nodatacow,compress=no /dev/mapper/cryptroot /mnt/var/lib
-    - mount -o subvol=@log,nodatacow,compress=no /dev/mapper/cryptroot /mnt/var/log
-    - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
+    - mount -o subvol=@var,nodatacow, /dev/mapper/cryptroot /mnt/var
+    - mount -o subvol=@var_lib,nodatacow, /dev/mapper/cryptroot /mnt/var/lib
+    - mount -o subvol=@log,nodatacow, /dev/mapper/cryptroot /mnt/var/log
+    - mount -o subvol=@swap,nodatacow, /dev/mapper/cryptroot /mnt/swap
     - mount -o subvol=@srv,compress=zstd:3,ssd /dev/mapper/cryptroot /mnt/srv
     - mount /dev/nvme1n1p1 /mnt/boot
     - mount /dev/nvme0n1p1 /mnt/windows-efi
@@ -92,8 +92,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
-    - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | awk '/^ *0:/ {print $4}' | sed 's/\.\.//')
+    - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
+    - swapon -s  # Should show /mnt/swap/swapfile
 
   - Edit with nano /mnt/etc/fstab #offset=$(cat /mnt/etc/swap_offset) in fstab comment: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
       - Review existing entries (for `/`, `/boot`, `/home`, etc.) and adjust mount options for BTRFS subvolumes (e.g., `compress=zstd:3`, `ssd`, `nodatacow`, `noatime`).
@@ -122,7 +123,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver
   - Chroot into the system:
     - arch-chroot /mnt systemctl enable --now fstrim.timer
   - Keyring initialization step
@@ -152,7 +153,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Configure `sudo`:
     - sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers 
 
-## Step 8: **Set Up TPM and LUKS2**
+## Step 8: **Set Up TPM and LUKS2 (re-enable Secure Boot in UEFI)**
 
   **a) Install tpm2-tools:**
    - pacman -S --noconfirm tpm2-tools
@@ -190,7 +191,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
-    - /mnt mkinitcpio -P
+    - mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
    
@@ -201,12 +202,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat <<'EOF' > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
    - loader /EFI/Microsoft/Boot/bootmgfw.efi
    - EOF
+  - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
+   - title Arch Linux (Fallback)
+   - linux /EFI/Linux/arch.efi
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw
+  - EOF 
   
   **d) Set Boot Order:**
    - Pin Arch first:
@@ -225,7 +231,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mkfs.fat -F32 -n RESCUE_USB /dev/sdX1
      - mkdir -p /mnt/usb
      - mount /dev/sdX1 /mnt/usb
-     - pacman -Sy grub efibootmgr
+     - pacman -Sy grub efibootmgr #isn't already in the pacstrap?
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb --bootloader-id=RescueUSB
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
@@ -235,7 +241,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - umount /mnt/usb  # Replace with your USB mountpoint
      - shred -u /root/luks-keyfile
   
-## Step 10: **Configure Secure Boot (re-enable Secure Boot in UEFI)** 
+## Step 10: **Configure Secure Boot** 
 
   **a) Install sbctl:**
    - pacman -S sbctl
@@ -249,11 +255,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 
   **c) Sign UKI and Nvidia Modules:**
-   - KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+')
+   - KERNEL_VERSION=$(uname -r | cut -d'-' -f1)
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-drm.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-uvm.ko
+   - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.kof
 
   **d) Automate Signing:**
    - mkdir -p /etc/pacman.d/hooks
@@ -267,10 +274,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [Action]
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
-     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+'); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
+     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r | cut -d'-' -f1); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
      - EOF
 
-  **- Reboot and enroll MOK in UEFI firmware.**
+  **Reboot and verify Secure Boot is active.**
      
 ## Step 11: **Install and Configure DE and Applications**
 
@@ -369,7 +376,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     
  **g) Configure security limits:**
    - cat << 'EOF' >> /etc/security/limits.conf
-     - * hard nproc 1000
+     - * hard nproc 8192
      - EOF
 
  **h) Configure auditd:**
@@ -390,6 +397,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemctl enable --now dnscrypt-proxy
    - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
+   - cat << 'EOF' > /etc/dnscrypt-proxy/dnscrypt-proxy.toml
+     - server_names = ['cloudflare', 'quad9-dnscrypt']
+     - listen_addresses = ['127.0.0.1:53', '[::1]:53']
+     - require_dnssec = true
+     - require_nolog = true
+     - require_nofilter = true
+   - EOF
+   - systemctl restart dnscrypt-proxy
 
   **k) Configure `usbguard` with GSConnect exception:**
    - usbguard generate-policy > /etc/usbguard/rules.conf
@@ -426,27 +441,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - EOF
    - systemctl enable --now lynis-audit.timer
   
-  **n) Configure Flatpak permissions:**
-   - flatpak override --user --nofilesystem=host
-
-  **o) Configure AIDE:**
+  **n) Configure AIDE:**
    - yay -S aide
    - aide --init
    - mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
    - systemctl enable --now aide-check.timer
 
-  **p) Optimize Mirrorlist**:
-  - Install `reflector`:
-    - yay -S reflector pacman-contrib`
-  - Update mirrorlist:
-    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
-  - Enable `reflector.timer`:
-    - systemctl enable --now reflector.timer
-
-  **q) Configure run0:**
+  **o) Configure run0:**
    - yay -S run0
    
-  **r) Configure sysctl hardening:**
+  **p) Configure sysctl hardening:**
    - cat << 'EOF' > /etc/sysctl.d/99-hardening.conf
      - net.ipv4.conf.default.rp_filter=1
      - net.ipv4.conf.all.rp_filter=1
@@ -467,12 +471,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - net.ipv4.icmp_echo_ignore_broadcasts=1
      - kernel.randomize_va_space=2
      - EOF
+   - echo "kernel.dmesg_restrict=1" >> /etc/sysctl.d/99-hardening.conf
+   - echo "kernel.kptr_restrict=2" >> /etc/sysctl.d/99-hardening.conf
+   - echo "net.core.bpf_jit_harden=2" >> /etc/sysctl.d/99-hardening.conf
    - sysctl -p /etc/sysctl.d/99-hardening.conf
 
-  **s) Audit SUID binaries:**
+  **q) Audit SUID binaries:**
    - find / -perm -4000 -type f -exec ls -l {} \; > /data/suid_audit.txt
+   - cat /data/suid_audit.txt # Remove SUID from non-essential binaries
+   - chmod u-s /usr/bin/ping
 
-  **t) Configure zram:**
+  **r) Configure zram:**
    - cat << 'EOF' > /etc/systemd/zram-generator.conf
      - [zram0]
      - zram-size = ram / 2
@@ -494,11 +503,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - nvidia-smi
   - Add environment variables for Nvidia:
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
-  - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU.Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
-    - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules
+  - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU. Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
+    - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
     - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
-    - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; nvidia-smi --auto-boost-default=0; loginctl terminate-user $USER\""
-    - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c \"modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; loginctl terminate-user $USER\""
+    - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; systemctl restart gdm'"
+    - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
     - EOF
     - udevadm control --reload-rules && udevadm trigger
   - Enable PCIe hotplug:
@@ -506,6 +515,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Check IOMMU groups for GPU passthrough
     - lspci -nnk  # Identify eGPU PCI ID
     - find /sys/kernel/iommu_groups/ -type l  # Check IOMMU group isolation. If passthrough needed, add vfio-pci.ids=<Nvidia/AMD device ID> to kernel parameters
+  - Configure switcheroo-control
+    - pacman -S switcheroo-control
+    - systemctl enable --now switcheroo-control
+  - Verify GPU switching:
+    - DRI_PRIME=1 glxinfo | grep "OpenGL renderer"  # Should show AMD
+    - prime-run glxinfo | grep "OpenGL renderer"    # Should show Nvidia
+  - Install bolt for Thunderbolt/OCuLink device management
+    - pacman -S bolt
+    - systemctl enable --now bolt
+    - boltctl list  # Authorize the OCuLink dock if listed 
    
 ## Step 14: **Configure Snapper**
   - Install Snapper:
