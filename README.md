@@ -82,13 +82,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mkdir -p /mnt/etc
     - genfstab -U /mnt | tee /mnt/etc/fstab
     - touch /mnt/swap/swapfile
-    - cat << 'EOF' >> /mnt/etc/fstab 
-    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
-    - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
-    - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) none swap defaults,offset=$(cat /mnt/etc/swap_offset) 0 0
-    - EOF  
+    - Edit with nano /mnt/etc/fstab #offset=$(cat /mnt/etc/swap_offset) in fstab comment: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
+      - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
+      - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
+      - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+      - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+      - /swap/swapfile none swap defaults,x-systemd.swap,discard=async,noatime,offset=$(cat /mnt/etc/swap_offset) 0 0
+      - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
