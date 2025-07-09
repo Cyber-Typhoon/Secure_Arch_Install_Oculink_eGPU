@@ -534,7 +534,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
     - EOF
     - udevadm control --reload-rules && udevadm trigger
-    - echo "options nvidia-drm modeset=1 fbdev=1" >> /etc/modprobe.d/nvidia.conf
+    - echo "options nvidia-drm modeset=1" >> /etc/modprobe.d/nvidia.conf
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
   - Check IOMMU groups for GPU passthrough
