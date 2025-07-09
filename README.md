@@ -310,6 +310,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install `thinklmi` to verify BIOS settings:
    - pacman -S thinklmi
   - Check BIOS settings: sudo thinklmi
+  - After installing yay Configure to show PKGBUILD diffs
+    - yay --save-config --diffmenu=yes --answerdiff=All || { echo "Failed to configure yay"; exit 1; }
+   - Verify yay to show PKGBUILD diffs
+    - grep -E 'diffmenu|answerdiff' ~/.config/yay/config.json
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
    - pacman -S yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth openSnitch
   - Install applications via Flatpak:
