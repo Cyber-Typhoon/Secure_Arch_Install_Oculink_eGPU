@@ -171,19 +171,21 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - chmod 600 /root/luks-keyfile
    - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
   - Update crypttab:
-   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
+   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
+   - tpm2_pcrread sha256 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
   - Back up keyfile to a secure USB:
    - mkfs.fat -F32 /dev/sdX1
    - mkdir -p /mnt/usb
    - mount /dev/sdX1 /mnt/usb 
    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
+   - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin /dev/nvme1n1p2
    - umount /mnt/usb
 
   **c) Enable Plymouth:**
    - Install and configure:
     - pacman -S --noconfirm plymouth
     - plymouth-set-default-theme -R bgrt
-   - Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate:
+    - grep HOOKS /etc/mkinitcpio.conf # Ensure the order is: base systemd autodetect modconf block plymouth sd-encrypt resume filesystems. Incorrect order can cause Plymouth to fail or LUKS to prompt incorrectly. Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate.
     - mkinitcpio -P  
      
 ## Step 9: **Configure systemd-boot with UKI**
@@ -208,7 +210,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt #if hotplug is not working consider looking some parameters pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1 #if hotplug is not working consider looking some parameters pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -217,7 +219,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
    - title Arch Linux (Fallback)
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
   - EOF 
   
   **d) Set Boot Order:**
@@ -230,19 +232,24 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Create minimal UKI config: `/etc/mkinitcpio-minimal.conf` (copy `/etc/mkinitcpio.conf`, remove non-essential hooks).
      - cp /etc/mkinitcpio.conf /etc/mkinitcpio-minimal.conf
      - sed -i 's/HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block sd-encrypt filesystems)/' /etc/mkinitcpio-minimal.conf
+     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch-fallback.efi"' >> /etc/mkinitcpio-minimal.conf
    - Generate minimal UKI:
      - mkinitcpio -P -c /etc/mkinitcpio-minimal.conf
+     - sbctl sign -s /boot/EFI/Linux/arch-fallback.efi
    - Create GRUB USB for recovery:
      - **Replace /dev/sdX1 with your USB partition**
      - mkfs.fat -F32 -n RESCUE_USB /dev/sdX1
      - mkdir -p /mnt/usb
      - mount /dev/sdX1 /mnt/usb
-     - pacman -Sy grub efibootmgr #isn't already in the pacstrap?
+     - pacman -Sy grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb --bootloader-id=RescueUSB
+     - cp /boot/vmlinuz-linux /mnt/usb/
+     - cp /boot/initramfs-linux.img /mnt/usb/
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
        - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
+     - sbctl sign -s /mnt/usb/EFI/BOOT/BOOTX64.EFI
     - After backing up to USB
      - umount /mnt/usb  # Replace with your USB mountpoint
      - shred -u /root/luks-keyfile
@@ -294,10 +301,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [Action]
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
-     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
+     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; sbctl sign /boot/EFI/Linux/arch-fallback.efi; }"
      - EOF
 
   **Reboot and verify Secure Boot is active.**
+
+  **e) Verify:**
+    - bootctl status | grep -i secure
+    - sbctl status
      
 ## Step 11: **Install and Configure DE and Applications**
 
