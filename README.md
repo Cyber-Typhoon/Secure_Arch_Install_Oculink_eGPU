@@ -228,7 +228,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - BOOT_WIN=$(efibootmgr | awk '/Windows/    {gsub(/Boot/, ""); print $1}')
      - efibootmgr --bootorder ${BOOT_ARCH},${BOOT_WIN}  # Ensure both Arch and Windows entries are listed
   
-   **e) Create Fallback Bootloader:**
+  **e) Create Fallback Bootloader:**
    - Create minimal UKI config: `/etc/mkinitcpio-minimal.conf` (copy `/etc/mkinitcpio.conf`, remove non-essential hooks).
      - cp /etc/mkinitcpio.conf /etc/mkinitcpio-minimal.conf
      - sed -i 's/HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block sd-encrypt filesystems)/' /etc/mkinitcpio-minimal.conf
@@ -253,21 +253,21 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - After backing up to USB
      - umount /mnt/usb  # Replace with your USB mountpoint
      - shred -u /root/luks-keyfile
-    
-   **f) Add Pacman Hook for UKI Regeneration:**
-     - mkdir -p /etc/pacman.d/hooks
-     - cat << 'EOF' > /etc/pacman.d/hooks/90-mkinitcpio.hook
-       - [Trigger]
-       - Operation = Install
-       - Operation = Upgrade
-       - Type = Package
-       - Target = linux
-       - Target = linux-firmware
-       - [Action]
-       - Description = Regenerating UKI
-       - When = PostTransaction
-       - Exec = /usr/bin/mkinitcpio -P
-     - EOF
+   
+  **f) Add Pacman Hook for UKI Regeneration:**
+   - mkdir -p /etc/pacman.d/hooks
+   - cat << 'EOF' > /etc/pacman.d/hooks/90-mkinitcpio.hook
+     - [Trigger]
+     - Operation = Install
+     - Operation = Upgrade
+     - Type = Package
+     - Target = linux
+     - Target = linux-firmware
+     - [Action]
+     - Description = Regenerating UKI
+     - When = PostTransaction
+     - Exec = /usr/bin/mkinitcpio -P
+   - EOF
   
 ## Step 10: **Configure Secure Boot** 
 
