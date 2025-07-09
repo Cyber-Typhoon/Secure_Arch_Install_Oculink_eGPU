@@ -376,7 +376,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     
  **g) Configure security limits:**
    - cat << 'EOF' >> /etc/security/limits.conf
-     - * hard nproc 8192
+     - hard nproc 8192
      - EOF
 
  **h) Configure auditd:**
