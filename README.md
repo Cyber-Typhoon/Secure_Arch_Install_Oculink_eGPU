@@ -84,21 +84,27 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - touch /mnt/swap/swapfile
     - echo "tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0" >> /mnt/etc/fstab
   - Generate fstab:
-    - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
+    - mkdir -p /mnt/etc
     - genfstab -U /mnt > /mnt/etc/fstab
-    - sed -i "/^UUID=${ARCH_ESP_UUID}/ s|defaults.*|umask=0077 0 2|" /mnt/etc/fstab # Substitute ARCH_ESP_UUID in fstab
+    - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
+    - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1)
+    - sed -i "/^UUID=${ARCH_ESP_UUID}/ s|defaults.*|umask=0077 0 2|" /mnt/etc/fstab
+    - echo "tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0" >> /mnt/etc/fstab
+    - echo "tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0" >> /mnt/etc/fstab
+    - echo "UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2" >> /mnt/etc/fstab 
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
   - Create a swap file on `@swap` subvolume:
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
+    - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
     - fallocate -l 24G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | awk '{if($1=="0:"){print $4}}' | sed 's/\.\.//')
-    - echo $SWAP_OFFSET > /mnt/swap_offset
+    - echo $SWAP_OFFSET > /mnt/etc/swap_offset  # Store in target system
     - swapon -d /mnt/swap/swapfile
     - swapon --show  # Verify swap is active
   - Copy DNS into the new system so it can resolve mirrors
@@ -111,9 +117,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Mirrorlist Before pacstrap
     - pacman -Sy reflector  
-    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+    - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs
   - Edit /mnt/etc/fstab to secure mounts:
   - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1) 
   - cat << 'EOF' > /mnt/etc/fstab
@@ -131,7 +137,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - tmpfs /run/shm tmpfs defaults,noatime,nosuid 0 0
     - EOF
     - cat /mnt/etc/fstab # Verify entries
   - Chroot into the system:
@@ -190,22 +195,21 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
-  - cat << 'EOF' > /etc/mkinitcpio.conf
     - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
-    - EOF
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
   - Generate UKI:
     - mkinitcpio -P
    
   **c) Create Boot Entries:**
+  - mount /dev/nvme1n1p1 /boot
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
-  - SWAP_OFFSET=$(cat /swap_offset) 
-  - cat << EOF > /boot/loader/entries/arch.conf
+  - SWAP_OFFSET=$(cat /etc/swap_offset)
+  - cat <<'EOF' > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
    - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 rcutree.rcu_idle_gp_delay=1
