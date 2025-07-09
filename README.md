@@ -41,11 +41,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - mkpart primary 1GiB 100%
   - quit
   - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
-  - mount /dev/nvme1n1p1 /mnt/boot
   - efibootmgr  # Check if UEFI recognizes both ESPs
     
   **b) Format ESP**:
-  - mkfs.fat -F32 ARCH_ESP /dev/nvme1n1p1
+  - mkfs.fat -F32 -n ARCH_ESP /dev/nvme1n1p1
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
@@ -185,16 +184,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
-    - mkinitcpio -P
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
+    - mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
-  - Generate UKI:
-    - cat <<'EOF' > /boot/loader/entries/arch.conf
-      - title Arch Linux
-      - linux /EFI/Linux/arch.efi
-      - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1
-    - EOF
    
   **c) Create Boot Entries:**
   - mount /dev/nvme1n1p1 /boot
@@ -213,7 +206,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   
   **d) Set Boot Order:**
    - Pin Arch first:
-     - efibootmgr --bootorder BOOT_ARCH=$(efibootmgr | awk '/Arch Linux/ {gsub(/Boot/, ""); print $1}'), BOOT_WIN$(efibootmgr | awk '/Windows/ {gsub(/Boot/, ""); print $1}')
+     - BOOT_ARCH=$(efibootmgr | awk '/Arch Linux/ {gsub(/Boot/, ""); print $1}')
+     - BOOT_WIN =$(efibootmgr | awk '/Windows/    {gsub(/Boot/, ""); print $1}')
      - efibootmgr --bootorder ${BOOT_ARCH},${BOOT_WIN}  # Ensure both Arch and Windows entries are listed
   
    **e) Create Fallback Bootloader:**
