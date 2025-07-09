@@ -34,11 +34,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
   **a) Partition the Second NVMe M.2 (/dev/nvme1n1 - remove single quotes)**:
-  - parted /dev/nvme1n1
-  - mklabel gpt
-  - mkpart ESP fat32 1MiB 1GiB
-  - set 1 esp on
-  - mkpart primary 1GiB 100%
+  - parted /dev/nvme1n1 --script \
+  - mklabel gpt \
+  - mkpart ESP fat32 1MiB 1GiB \
+  - set 1 esp on \
+  - mkpart crypt btrfs 1GiB 100%
   - quit
   - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
   - efibootmgr  # Check if UEFI recognizes both ESPs
@@ -84,14 +84,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1)
     - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
     - mkdir -p /mnt/etc
-    - genfstab -U /mnt > /mnt/etc/fstab 
+    - genfstab -U /mnt | tee /mnt/etc/fstab
     - touch /mnt/swap/swapfile
     - cat << 'EOF' >> /mnt/etc/fstab 
     - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
     - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - UUID=$ROOT_UUID none swap defaults,offset=$(cat /mnt/etc/swap_offset) 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) none swap defaults,offset=$(cat /mnt/etc/swap_offset) 0 0
     - EOF  
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
@@ -103,10 +103,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile
     - swapon /mnt/swap/swapfile
-    - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile | awk '{if($1=="0:"){print $4}}' | sed 's/\.\.//')
-    - echo $SWAP_OFFSET > /mnt/etc/swap_offset  # Store in target system
+    - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile \ | awk '$1=="0:" {print $4}' | sed 's/\.\.//')
+    - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - swapon -d /mnt/swap/swapfile
     - swapon --show  # Verify swap is active
+    - swapoff /mnt/swap/swapfile
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf  
    
@@ -121,7 +122,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo
   - Chroot into the system:
-    - arch-chroot /mnt
+    - arch-chroot /mnt /bin/bash -c '# Example: use NetworkManager pacman -Sy --noconfirm networkmanager systemctl enable NetworkManager'
     - systemctl enable --now fstrim.timer
   - Keyring initialization step
     - pacman-key --init
@@ -185,15 +186,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
-    - mkinitcpio -P
+    - nano /etc/mkinitcpio.conf # In /etc/mkinitcpio.conf (inside chroot), ensure you have: BINARIES, MODULES and HOOKS
+    - arch-chroot /mnt mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
    
   **c) Create Boot Entries:**
   - mount /dev/nvme1n1p1 /boot
+  - bootctl --esp-path=/boot install
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
-  - SWAP_OFFSET=$(cat /etc/swap_offset)
+  - SWAP_OFFSET=$(< /etc/swap_offset)
   - cat <<'EOF' > /boot/loader/entries/arch.conf
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
