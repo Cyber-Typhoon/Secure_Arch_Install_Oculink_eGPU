@@ -422,7 +422,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
    - cat << 'EOF' > /etc/dnscrypt-proxy/dnscrypt-proxy.toml
-     - server_names = ['cloudflare', 'quad9-dnscrypt']
+     - server_names = ['quad9-dnscrypt', 'adguard-dns', 'nextdns', 'controld', 'mullvad']
      - listen_addresses = ['127.0.0.1:53', '[::1]:53']
      - require_dnssec = true
      - require_nolog = true
