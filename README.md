@@ -678,3 +678,39 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - Managed by Snapper for `@`, `@home`, `@data`, excluding `/var`, `/var/lib`, `/log`, `/tmp`, `/run`.
   - Offsite Snapshots:
     - To be refined savig the data in local server - check btrbk and restic
+   
+ ## Step 19: **Post-Installation Maintenance and Verification**
+   **a) Regular System Updates:**
+     - Always update your system regularly: `sudo pacman -Syu`
+     - Check for AUR updates: `yay -Syu`
+
+  **b) BTRFS Scrub:**
+    - Schedule weekly or monthly BTRFS scrubs to check for data integrity issues:
+      - `sudo btrfs scrub start /`
+      - `sudo btrfs scrub status /`
+      - Consider setting up a systemd timer for this (e.g., `btrfs-scrub@.timer` and `btrfs-scrub@.service` if provided by `btrfs-progs` or a custom one).
+
+  **c) Remove Orphaned Packages:**
+    - Periodically remove packages that are no longer required: `sudo pacman -Rns $(pacman -Qdtq)`
+
+  **d) Review Snapper Snapshots:**
+    - Regularly review your snapshots: `snapper list`
+    - Manually delete old snapshots if needed (though `snapper-cleanup.timer` handles this): `snapper delete <snapshot_number>`
+
+  **e) Check for SUID/SGID Changes (AIDE):**
+    - `sudo aide --check` (After running `aide --init` and `mv` in initial setup)
+
+  **f) Perform Security Audits:**
+    - Run `lynis audit system` weekly/monthly (already scheduled by your timer).
+    - Run `rkhunter --check` periodically.
+    - Run `sudo usbguard generate-policy` if you add new USB devices and need to update rules.
+
+  **g) Verify Firmware Updates:**
+    - `fwupdmgr refresh` and `fwupdmgr update` periodically.
+
+  **h) Check Systemd Journal for Errors:**
+    - `journalctl -p 3 -xb` (errors from current boot)
+    - `journalctl -p 3` (all errors)
+
+  **i) Test AUR builds with /tmp (if noexec applied):**
+    - If you encounter issues, consider configuring `yay` to use a different build directory (e.g., `yay --builddir ~/.cache/yay_build`) or temporarily removing `noexec` from `/tmp` for builds, then re-adding it. (This point is already in your Step 16, but it's good to reiterate it in maintenance as it's an ongoing consideration).
