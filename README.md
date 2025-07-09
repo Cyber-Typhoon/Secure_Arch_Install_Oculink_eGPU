@@ -115,11 +115,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager
   - Chroot into the system:
-    - arch-chroot /mnt /bin/bash -c 
-    - systemctl enable --now fstrim.timer
+    - arch-chroot /mnt systemctl enable --now fstrim.timer
   - Keyring initialization step
-    - [multilib]
-    - Include = /etc/pacman.d/mirrorlist
+    - nano /etc/pacman.conf uncomment [multilib]
+    - add **Include = /etc/pacman.d/mirrorlist** below the [core], [extra], [community], and [multilib] sections in /etc/pacman.conf
     - pacman-key --init
     - pacman-key --populate archlinux
     - pacman -Sy
@@ -182,7 +181,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
-    - arch-chroot /mnt mkinitcpio -P
+    - /mnt mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
    
@@ -241,7 +240,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 
   **c) Sign UKI and Nvidia Modules:**
-   - pacman -S nvidia-utils nvidia-settings nvidia-prime
    - KERNEL_VERSION=$(ls /usr/lib/modules | grep -E '^[0-9]+\.[0-9]+\.[0-9]+')
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
@@ -268,16 +266,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 11: **Install and Configure DE and Applications**
 
   **a) Install yay and Gnome:**
-   - pacman -S yay gnome
+   - pacman -S gnome
    - Install [Alacritty](https://github.com/alacritty/alacritty/blob/master/INSTALL.md) 
   - Reboot and Start gnome
 
   **b) Install the applications: (Review installations steps in each application instructions websites before installing it)**
   - Install `thinklmi` to verify BIOS settings:
-   - yay -S thinklmi
+   - pacman -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - Install core applications:
-   - yay -S gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth openSnitch
+   - pacman -S yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth openSnitch
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
