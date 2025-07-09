@@ -101,8 +101,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(filefrag -v /mnt/swap/swapfile \ | awk '$1=="0:" {print $4}' | sed 's/\.\.//')
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
-    - swapon -d /mnt/swap/swapfile
-    - swapoff /mnt/swap/swapfile
   - Mirrorlist Before pacstrap
     - pacman -Sy reflector  
     - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist  
