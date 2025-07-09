@@ -82,6 +82,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
     - mkdir -p /mnt/etc
     - genfstab -U /mnt | tee /mnt/etc/fstab
+  - Harden subvol log
+    - Edit with Nano /mnt/var/log UUID=$ROOT_UUID /var/log btrfs rw,noatime,nodatacow,noexec,subvol=@log 0 0
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
@@ -105,8 +107,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - For the Windows ESP (`/windows-efi`), find the line added by `genfstab` and change its options from `defaults` to `noauto,x-systemd.automount,umask=0077`. It will look something like: `UUID=<WINDOWS_ESP_UUID_VALUE> /windows-efi vfat defaults 0 2`: 
         - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
       - Add `tmpfs` entries at the end of the file:
-        - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-        - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+        - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
+        - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
       - Add `swapfile` entry at the end of the file with the actual numerical offset:
         - /swap/swapfile none swap defaults,x-systemd.swap,discard=async,noatime,offset=$(cat /mnt/etc/swap_offset) 0 0
       - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e
