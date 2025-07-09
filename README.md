@@ -150,16 +150,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - useradd -m -G wheel,video,input,storage -s /usr/bin/zsh <username>
     - passwd <username>
   - Configure `sudo`:
-    - visudo # Uncomment %wheel ALL=(ALL:ALL) ALL
+    - sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers 
 
 ## Step 8: **Set Up TPM and LUKS2**
 
   **a) Install tpm2-tools:**
-   - pacman -S tpm2-tools
+   - pacman -S --noconfirm tpm2-tools
 
   **b) Bind LUKS2 Key to TPM:**
   - Enroll LUKS key:
-   - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
+   - dd if=/dev/random of=/root/luks-keyfile bs=512 count=4 iflag=fullblock
    - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
    - chmod 600 /root/luks-keyfile
    - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
@@ -174,7 +174,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **c) Enable Plymouth:**
    - Install and configure:
-    - pacman -S plymouth
+    - pacman -S --noconfirm plymouth
     - plymouth-set-default-theme -R bgrt
    - Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate:
     - mkinitcpio -P  
