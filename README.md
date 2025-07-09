@@ -34,7 +34,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
   **a) Partition the Second NVMe M.2 (/dev/nvme1n1 - remove single quotes)**:
-  - cat /sys/firmware/efi/fw_platform_size  # Should return 64
   - parted /dev/nvme1n1
   - mklabel gpt
   - mkpart ESP fat32 1MiB 1GiB
@@ -42,10 +41,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - mkpart primary 1GiB 100%
   - quit
   - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
+  - mount /dev/nvme1n1p1 /mnt/boot
   - efibootmgr  # Check if UEFI recognizes both ESPs
     
   **b) Format ESP**:
-  - mkfs.fat -F32 /dev/nvme1n1p1
+  - mkfs.fat -F32 ARCH_ESP /dev/nvme1n1p1
       
   **c) Set Up LUKS2 Encryption**:
   - Encrypt the BTRFS partition:
@@ -68,9 +68,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - btrfs subvolume create /mnt/@srv
     - umount /mnt
   - Mount subvolumes with optimized options:
-    - mkdir -p /mnt/{boot,windows-efi,snapshots,home,data,var,var/lib,var/log,swap,srv}
+    - mkdir -p /mnt/{boot,windows-efi,.snapshots,home,data,var,var/lib,var/log,swap,srv}
     - mount -o subvol=@,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt
-    - mount -o subvol=@snapshots,ssd /dev/mapper/cryptroot /mnt/snapshots
+    - mount -o subvol=@snapshots,ssd /dev/mapper/cryptroot /mnt/.snapshots
     - mount -o subvol=@home,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/home
     - mount -o subvol=@data,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/data
     - mount -o subvol=@var,nodatacow,compress=no /dev/mapper/cryptroot /mnt/var
@@ -88,16 +88,18 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - genfstab -U /mnt > /mnt/etc/fstab
     - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
     - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1)
-    - sed -i "/^UUID=${ARCH_ESP_UUID}/ s|defaults.*|umask=0077 0 2|" /mnt/etc/fstab
-    - echo "tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0" >> /mnt/etc/fstab
-    - echo "tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0" >> /mnt/etc/fstab
-    - echo "UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2" >> /mnt/etc/fstab 
+    - sed -i "/^UUID=${ARCH_ESP_UUID}/d" /mnt/etc/fstab
+    - cat << 'EOF' >> /mnt/etc/fstab 
+    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
+    - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
+    - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+    - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+    - EOF  
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
   - Create a swap file on `@swap` subvolume:
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
-    - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
     - fallocate -l 24G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
@@ -112,33 +114,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    
 **f) Check network**:
   - ping -c 3 archlinux.org
-  - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
+  - iwctl device wifi connect <SSID> password <password>  # If using Wi-Fi
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
   - Mirrorlist Before pacstrap
     - pacman -Sy reflector  
     - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist
   - Install base system:
-    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs
-  - Edit /mnt/etc/fstab to secure mounts:
-  - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1) 
-  - cat << 'EOF' > /mnt/etc/fstab
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) / btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /.snapshots btrfs subvol=@snapshots,compress=zstd:3,ssd,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
-    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
-    - /swap/swapfile none swap defaults 0 0
-    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
-    - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
-    - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
-    - EOF
-    - cat /mnt/etc/fstab # Verify entries
+    - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo
   - Chroot into the system:
     - arch-chroot /mnt
     - systemctl enable --now fstrim.timer
@@ -164,6 +147,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Create a user with Zsh as the default shell:
     - useradd -m -G wheel -s /usr/bin/zsh <username>
     - passwd <username>
+  - Add groups for GUI and hardware access:
+    - useradd -m -G wheel,video,input,storage <username>
   - Configure `sudo`:
     - visudo # Uncomment %wheel ALL=(ALL:ALL) ALL
 
@@ -180,7 +165,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
-  - Back up keyfile to a secure USB.
+  - Back up keyfile to a secure USB:
+   - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
 
   **c) Enable Plymouth:**
    - Install and configure:
@@ -203,6 +189,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
   - Generate UKI:
     - mkinitcpio -P
+    - cat <<'EOF' > /boot/loader/entries/arch.conf
+      - title Arch Linux
+      - linux /EFI/Linux/arch.efi
+      - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1
+    - EOF
    
   **c) Create Boot Entries:**
   - mount /dev/nvme1n1p1 /boot
@@ -232,11 +223,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mkinitcpio -P -c /etc/mkinitcpio-minimal.conf
    - Create GRUB USB for recovery:
      - **Replace /dev/sdX1 with your USB partition**
-     - mkfs.fat -F32 /dev/sdX1
+     - mkfs.fat -F32 -n RESCUE_USB /dev/sdX1
      - mkdir -p /mnt/usb
      - mount /dev/sdX1 /mnt/usb
-     - pacman -S grub
-     - grub-install --target=x86_64-efi --efi-directory=/boot
+     - pacman -Sy grub efibootmgr
+     - grub-install --target=x86_64-efi --efi-directory=/mnt/usb --bootloader-id=RescueUSB
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
        - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
