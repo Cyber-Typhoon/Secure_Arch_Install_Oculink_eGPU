@@ -20,6 +20,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Review the guides for additional Privacy on the post installation [Group Police](https://www.privacyguides.org/en/os/windows/group-policies/), [Windows Privacy Settings](https://discuss.privacyguides.net/t/windows-privacy-settings/27333) and [Windows Post-Install Hardening Guide](https://discuss.privacyguides.net/t/windows-post-install-hardening-guide/27335)
    - Update BIOS and Firmware (TPM updates) via Lenovo Vantage Application or Website
    - Disable Windows Fast Startup to prevent ESP lockout (Powershell): powercfg /h off
+   - Disable Windows Bitlocker.
    - Verify TPM 2.0 is active: `tpm.msc`. Clear TPM if previously provisioned (Powershell): tpm.msc
    - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `sudo lspci -vv | grep -i region` (in Linux later).
    - Verify NVMe drives: `lsblk` in a live environment or **Windows Disk Management**.
@@ -199,7 +200,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
   - SWAP_OFFSET=$(< /etc/swap_offset)
-  - cat <<'EOF' > /boot/loader/entries/arch.conf
+  - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
    - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash
@@ -255,7 +256,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 
   **c) Sign UKI and Nvidia Modules:**
-   - KERNEL_VERSION=$(uname -r | cut -d'-' -f1)
+   - KERNEL_VERSION=$(uname -r)
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-drm.ko
@@ -274,7 +275,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [Action]
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
-     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r | cut -d'-' -f1); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
+     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; }"
      - EOF
 
   **Reboot and verify Secure Boot is active.**
