@@ -630,5 +630,3 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - Managed by Snapper for `@`, `@home`, `@data`, excluding `/var`, `/var/lib`, `/log`, `/tmp`, `/run`.
   - Offsite Snapshots:
     - To be refined savig the data in local server - check btrbk and restic
-
- 
