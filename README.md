@@ -205,7 +205,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf mitigations=auto,nosmt
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -214,7 +214,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
    - title Arch Linux (Fallback)
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf mitigations=auto,nosmt
   - EOF 
   
   **d) Set Boot Order:**
@@ -243,6 +243,21 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - After backing up to USB
      - umount /mnt/usb  # Replace with your USB mountpoint
      - shred -u /root/luks-keyfile
+    
+   **f) Add Pacman Hook for UKI Regeneration:**
+     - mkdir -p /etc/pacman.d/hooks
+     - cat << 'EOF' > /etc/pacman.d/hooks/90-mkinitcpio.hook
+       - [Trigger]
+       - Operation = Install
+       - Operation = Upgrade
+       - Type = Package
+       - Target = linux
+       - Target = linux-firmware
+       - [Action]
+       - Description = Regenerating UKI
+       - When = PostTransaction
+       - Exec = /usr/bin/mkinitcpio -P
+     - EOF
   
 ## Step 10: **Configure Secure Boot** 
 
@@ -266,7 +281,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.kof
 
   **d) Automate Signing:**
-   - mkdir -p /etc/pacman.d/hooks
    - cat << 'EOF' > /etc/pacman.d/hooks/99-secure-boot-signing.hook
      - [Trigger]
      - Operation = Install
@@ -627,6 +641,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  - Test fwupd
    - fwupdmgr refresh
    - fwupdmgr update
+ - Check for ThinkBook-specific quirks:
+   - dmesg | grep -i "firmware\|wifi\|suspend\|battery" # Look for unusual warnings or errors related to hardware 
  - Test Snapshots
    - snapper --config root create --description "Test snapshot"
    - snapper list
