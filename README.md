@@ -81,17 +81,17 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount /dev/nvme1n1p1 /mnt/boot
     - mount /dev/nvme0n1p1 /mnt/windows-efi
   - Add tmpfs for `/tmp`:
+    - touch /mnt/swap/swapfile
     - echo "tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0" >> /mnt/etc/fstab
   - Generate fstab:
     - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
     - genfstab -U /mnt > /mnt/etc/fstab
-    - sed -i "s|${ARCH_ESP_UUID}|/boot vfat umask=0077 0 2|" /mnt/etc/fstab # Substitute ARCH_ESP_UUID in fstab
+    - sed -i "/^UUID=${ARCH_ESP_UUID}/ s|defaults.*|umask=0077 0 2|" /mnt/etc/fstab # Substitute ARCH_ESP_UUID in fstab
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
   - Create a swap file on `@swap` subvolume:
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
-    - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
     - fallocate -l 24G /mnt/swap/swapfile
     - chmod 600 /mnt/swap/swapfile
@@ -103,30 +103,31 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - swapon --show  # Verify swap is active
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf  
-  - Before writing the fstab, **get the UUID of your Arch ESP partition (/dev/nvme1n1p1)**
-    - ARCH_ESP_UUID=$(blkid -s UUID -o value /dev/nvme1n1p1)
    
 **f) Check network**:
   - ping -c 3 archlinux.org
   - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1) (re-enable Secure Boot in UEFI)**
+  - Mirrorlist Before pacstrap
+    - pacman -Sy reflector  
+    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
   - Install base system:
     - pacstrap /mnt base linux linux-firmware intel-ucode zsh nvidia-dkms
   - Edit /mnt/etc/fstab to secure mounts:
   - WINDOWS_ESP_UUID=$(blkid -s UUID -o value /dev/nvme0n1p1) 
   - cat << 'EOF' > /mnt/etc/fstab
-    - /dev/mapper/cryptroot /btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
-    - /dev/mapper/cryptroot /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
-    - /dev/mapper/cryptroot /.snapshots btrfs subvol=@snapshots,compress=zstd:3,ssd,noatime 0 0
-    - /dev/mapper/cryptroot /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
-    - /dev/mapper/cryptroot /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
-    - /dev/mapper/cryptroot /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
-    - /dev/mapper/cryptroot /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
-    - /dev/mapper/cryptroot /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) / btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,nosuid,nodev 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /.snapshots btrfs subvol=@snapshots,compress=zstd:3,ssd,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var btrfs subvol=@var,nodatacow,compress=no,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var/lib btrfs subvol=@var_lib,nodatacow,compress=no,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /var/log btrfs subvol=@log,nodatacow,compress=no,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0
+    - UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) /swap btrfs subvol=@swap,nodatacow,compress=no,noatime 0 0
     - /swap/swapfile none swap defaults 0 0
-    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 **use the UUID of your Arch ESP partition -- replace ARCH_ESP_UUID**
+    - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2 
     - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
     - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
     - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
@@ -135,13 +136,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - cat /mnt/etc/fstab # Verify entries
   - Chroot into the system:
     - arch-chroot /mnt
+    - systemctl enable --now fstrim.timer
   - Keyring initialization step
     - pacman-key --init
     - pacman-key --populate archlinux
-  - Mirrorlist Before pacstrap
-    - pacman -Sy reflector  
-    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
-    - systemctl enable --now fstrim.timer
+
 
 ## Step 6: **Set timezone, locale, and hostname**
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
@@ -170,11 +169,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **b) Bind LUKS2 Key to TPM:**
   - Enroll LUKS key:
-   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
    - dd bs=512 count=4 if=/dev/random of=/root/luks-keyfile iflag=fullblock
    - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
    - chmod 600 /root/luks-keyfile
-   - systemd-cryptenroll --tpm2-device=auto --test /dev/nvme1n1p2
+   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab 
   - Back up keyfile to a secure USB.
@@ -188,16 +186,15 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      
 ## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
-    - pacman -S systemd-boot
     - bootctl install
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
   - cat << 'EOF' > /etc/mkinitcpio.conf
-    - BINARIES=(/usr/lib/systemd/systemd-cryptsetup /usr/bin/btrfs)
-    - HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)
-    - MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)
-    - UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi" 
+    - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
+    - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme pciehp)/' /etc/mkinitcpio.conf
+    - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
+    - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
     - EOF
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
@@ -220,7 +217,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   
   **d) Set Boot Order:**
    - Pin Arch first:
-     - efibootmgr --create --disk /dev/nvme1n1 --part 1 --loader /EFI/Linux/arch.efi --label "Arch Linux" --unicode
      - efibootmgr --bootorder $(efibootmgr | grep "Arch Linux" | cut -d' ' -f1 | sed 's/Boot//'),$(efibootmgr | grep "Windows" | cut -d' ' -f1 | sed 's/Boot//')
      - efibootmgr  # Ensure both Arch and Windows entries are listed
   
@@ -236,11 +232,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mkdir -p /mnt/usb
      - mount /dev/sdX1 /mnt/usb
      - pacman -S grub
-     - grub-install --target=x86_64-efi --efi-directory=/mnt/usb
+     - grub-install --target=x86_64-efi --efi-directory=/boot
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
        - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
+    - After backing up to USB
+     - umount /mnt/usb  # Replace with your USB mountpoint
+     - shred -u /root/luks-keyfile
   
 ## Step 10: **Configure Secure Boot** 
 
@@ -551,7 +550,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - TIMELINE_LIMIT_WEEKLY="4"
       - TIMELINE_LIMIT_MONTHLY="6"
       - TIMELINE_LIMIT_YEARLY="0"
-      - SUBVOLUME="/"
+      - SUBVOLUME="/home"
       - ALLOW_GROUPS=""
       - SYNC_ACL="no"
       - FILTER="/etc/snapper/filters/global-filter.txt"
@@ -565,7 +564,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - TIMELINE_LIMIT_WEEKLY="4"
       - TIMELINE_LIMIT_MONTHLY="6"
       - TIMELINE_LIMIT_YEARLY="0"
-      - SUBVOLUME="/"
+      - SUBVOLUME="/data"
       - ALLOW_GROUPS=""
       - SYNC_ACL="no"
       - FILTER="/etc/snapper/filters/global-filter.txt"
