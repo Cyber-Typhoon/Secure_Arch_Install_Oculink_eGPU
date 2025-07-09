@@ -91,13 +91,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
     - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
-    - fallocate -l 24G /mnt/swap/swapfile
+    - fallocate -l 24G /mnt/swap/swapfile || { echo "fallocate failed"; exit 1; }
     - chmod 600 /mnt/swap/swapfile
-    - mkswap /mnt/swap/swapfile
+    - mkswap /mnt/swap/swapfile || { echo "mkswap failed"; exit 1; }
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
+    - echo "/swap/swapfile none swap defaults,discard=async,noatime,offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
     - swapon -s  # Should show /mnt/swap/swapfile
+    - swapoff /mnt/swap/swapfile
+    - cat /mnt/etc/fstab
 
   - Edit with nano /mnt/etc/fstab #offset=$(cat /mnt/etc/swap_offset) in fstab comment: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
       - Review existing entries (for `/`, `/boot`, `/home`, etc.) and adjust mount options for BTRFS subvolumes (e.g., `compress=zstd:3`, `ssd`, `nodatacow`, `noatime`).
@@ -298,7 +301,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      
 ## Step 11: **Install and Configure DE and Applications**
 
-  **a) Install yay and Gnome:**
+  **a) Install Gnome:**
    - pacman -S gnome
    - Install [Alacritty](https://github.com/alacritty/alacritty/blob/master/INSTALL.md) 
   - Reboot and Start gnome
@@ -307,7 +310,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install `thinklmi` to verify BIOS settings:
    - pacman -S thinklmi
   - Check BIOS settings: sudo thinklmi
-  - Install core applications:
+  - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
    - pacman -S yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth openSnitch
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
