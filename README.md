@@ -103,7 +103,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - umount /mnt/swap 
-    - echo "/swap/swapfile none swap defaults,discard=async,noatime 0 0" >> /mnt/etc/fstab
+    - echo "/swap/swapfile none swap defaults,discard=async,noatime,resume_offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
     - #Manually edit /boot/loader/entries/arch.conf later to include resume_offset=$SWAP_OFFSET
     - cat /mnt/etc/fstab
 
@@ -186,6 +186,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
    - cryptsetup luksDump /dev/nvme1n1p2 | grep -i tpm
    - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
+   - echo 'FILES=(/root/luks-keyfile)' >> /etc/mkinitcpio.conf
    - mkinitcpio -P
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 /root/luks-keyfile luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
@@ -211,7 +212,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
   - mount /dev/nvme1n1p1 /boot
-  - bootctl --esp-path=/boot --no-variables install
+  - bootctl --esp-path=/boot/EFI --no-variables install
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
@@ -231,6 +232,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
   - SWAP_OFFSET=$(cat /etc/swap_offset)
+  - LUKS_UUID=$(blkid -s UUID -o value /dev/nvme1n1p2)
   - cat <<EOF > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
