@@ -102,9 +102,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mkswap /mnt/swap/swapfile || { echo "mkswap failed"; exit 1; }
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
-    - umount /mnt/swap 
+    - umount /mnt/swap
     - echo "/swap/swapfile none swap defaults,discard=async,noatime,resume_offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
-    - #Manually edit /boot/loader/entries/arch.conf later to include resume_offset=$SWAP_OFFSET
     - cat /mnt/etc/fstab
 
   - Edit with Nano /mnt/etc/fstab
@@ -183,23 +182,25 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **b) Bind LUKS2 Key to TPM:**
   - Enroll LUKS key:
-   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
+   - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+4+7 /dev/nvme1n1p2
+   - systemd-cryptenroll --tpm2-device=auto --test /dev/nvme1n1p2 #just testing the TPM unlocking works with the current PCR values.
    - cryptsetup luksDump /dev/nvme1n1p2 | grep -i tpm
    - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
    - echo 'FILES=(/root/luks-keyfile)' >> /etc/mkinitcpio.conf
    - mkinitcpio -P
   - Update crypttab:
-   - echo "cryptroot /dev/nvme1n1p2 /root/luks-keyfile luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
-   - tpm2_pcrread sha256:0,7 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
+   - echo "cryptroot /dev/nvme1n1p2 /root/luks-keyfile luks,tpm2-device=auto,tpm2-pcrs=0+4+7" >> /etc/crypttab
+   - tpm2_pcrread sha256:0,4,7 #Ensure PCRs 0, 4 and 7 (firmware, boot loader and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
   - Back up keyfile to a secure USB:
    - lsblk 
    - mkfs.fat -F32 /dev/sdb1 **Replace sdb1 with USB partition confirmed via lsblk previously executed**
    - mkdir -p /mnt/usb
    - mount /dev/sdb1 /mnt/usb **Replace sdb1 with USB partition confirmed via lsblk previously executed**
    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
-   - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin --tpm-device=/dev/tpmrm0 --pcr-bank=sha256 --pcr-ids=0,7 /dev/nvme1n1p2
-   - tpm2_createpolicy --policy-pcr -l sha256:0,7 -L /mnt/usb/tpm2-policy.bin **execute this one if the command above doesn't work, otherwise skip this step**
+   - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin --tpm-device=/dev/tpmrm0 --pcr-bank=sha256 --pcr-ids=0,4,7 /dev/nvme1n1p2
+   - tpm2_createpolicy --policy-pcr -l sha256:0,4,7 -L /mnt/usb/tpm2-policy.bin **execute this one if the command above doesn't work, otherwise skip this step**
    - umount /mnt/usb
+  - echo "WARNING: Store the LUKS recovery passphrase securely in Bitwarden. TPM unlocking may fail after firmware updates or Secure Boot changes."
 
   **c) Enable Plymouth:**
    - Install and configure:
@@ -239,7 +240,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
    - #Replace variable placeholder with actual number: $SWAP_OFFSET --> resume_offset=12345678  # Replace with actual output of btrfs inspect-internal map-swapfile
    - #if hotplug is not working consider looking some parameters i915.enable_psr=0 pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
-   - EOF
+  - EOF
+  - grep resume_offset /mnt/etc/fstab /boot/loader/entries/arch.conf # **ensure the numerical value (e.g., resume_offset=12345678) is present and not a variable.**
   - cat <<'EOF' > /boot/loader/entries/windows.conf
    - title Windows
    - loader /EFI/Microsoft/Boot/bootmgfw.efi
@@ -318,7 +320,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
    - sbctl sign --all
    - sbctl status   # confirm “Secure Boot enabled; all OK”
-
+   - efivar -p -n 8be4df61-93ca-11d2-aa0d-00e098032b8c-SetupMode #replace 8be4df61-93ca-11d2-aa0d-00e098032b8c with secure boot number, this should return 0 -- If enrollment fails, re-run sbctl enroll-keys --tpm-eventlog and reboot again, ensuring the MOK enrollment prompt is completed correctly.
 
   **c) Sign UKI and Nvidia Modules:**
    - KERNEL_VERSION=$(uname -r)
