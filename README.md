@@ -88,7 +88,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mkdir -p /mnt/etc
     - genfstab -U /mnt | tee /mnt/etc/fstab
   - Harden subvol log
-    - Edit with Nano /mnt/var/log UUID=$ROOT_UUID /var/log btrfs rw,noatime,nodatacow,noexec,subvol=@log 0 0
+    - Edit with Nano `/mnt/etc/fstab` and ensure the `/var/log` entry is similar to: `UUID=$ROOT_UUID /var/log btrfs rw,noatime,nodatacow,noexec,subvol=@log 0 0`
     - cat /mnt/etc/fstab  # Check for duplicates or incorrect UUIDs
   
   **e) Configure Swap File**:
@@ -124,7 +124,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - Add `tmpfs` entries at the end of the file:
         - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
         - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
-      - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e
+      - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e Manually insert the numerical offset into fstab for the swap file entry.
       - cat /mnt/etc/fstab
  
 **f) Check network**:
@@ -194,7 +194,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - mkdir -p /mnt/usb
    - mount /dev/sdb1 /mnt/usb 
    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
-   - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin /dev/nvme1n1p2
+   - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin --tpm-device=/dev/tpmrm0 --pcr-bank=sha256 --pcr-ids=0,7 /dev/nvme1n1p2
    - umount /mnt/usb
 
   **c) Enable Plymouth:**
@@ -268,7 +268,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - cp /boot/initramfs-linux.img /mnt/usb/
      - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
      - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) 
-     - cat << 'EOF' > /mnt/usb/grub/grub.cfg
+     - cat << 'EOF' > /mnt/usb/boot/grub/grub.cfg
        - set timeout=5
        - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot cryptkey=UUID=$(blkid -s UUID -o value /dev/sdb1):fat32:/luks-keyfile root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
@@ -325,7 +325,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [Action]
      - Description = Signing kernel modules and UKI for Secure Boot...
      - When = PostTransaction
-     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r); sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/*.ko; sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; sbctl sign /boot/EFI/Linux/arch-fallback.efi; }"
+     - Exec = /usr/bin/bash -c "[ -x /usr/bin/sbctl ] && { KERNEL_VERSION=$(uname -r); sbctl sign $(find /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia/ -name "*.ko"); sbctl sign /boot/EFI/Linux/arch.efi; sbctl sign /usr/lib/systemd/boot/efi/systemd-bootx64.efi; sbctl sign /boot/EFI/Linux/arch-fallback.efi; }"
      - EOF
 
   **Reboot and verify Secure Boot is active.**
@@ -344,19 +344,19 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **b) Install the applications: (Review installations steps in each application instructions websites before installing it)**
   - Install `thinklmi` to verify BIOS settings:
-   - pacman -S thinklmi
+   - pacman -S --needed thinklmi
   - Check BIOS settings: sudo thinklmi
   - After installing yay Configure to show PKGBUILD diffs
     - yay -Y --diffmenu --answerdiff=All || { echo "Failed to configure yay"; exit 1; }
    - Verify yay to show PKGBUILD diffs
     - yay -Pg | grep -E 'diffmenu|answerdiff'
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
-   - pacman -S yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth opensnitch
+   - pacman -S --needed yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth opensnitch
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
  **c) Install Fonts**
-  - yay -S ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
+  - yay -S --needed ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
 
  **d) Enable services:**
   - systemctl enable gdm bluetooth ufw auditd apparmor systemd-timesyncd tlp NetworkManager
@@ -483,10 +483,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemctl enable --now usbguard
 
   **l) Enable `fapolicyd` with Nvidia exceptions, `sshguard`, `rkhunter`:**
-   - pacman -S fapolicyd
+   - pacman -S fapolicyd sshguard rkhunter
    - echo "/usr/bin/nvidia-smi trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
    - echo "/usr/bin/nvidia-settings trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
-   - systemctl enable --now fapolicyd
+   - systemctl enable --now fapolicyd sshguard rkhunter
    - systemctl restart fapolicyd
 
   **m) Run Lynis audit and create timer:**
@@ -499,14 +499,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - Persistent=true
      - [Install]
      - WantedBy=timers.target
-     - EOF
+   - EOF
    - cat << 'EOF' > /etc/systemd/system/lynis-audit.service
      - [Unit]
      - Description=Run Lynis audit
      - [Service]
      - Type=oneshot
      - ExecStart=/usr/bin/lynis audit system
-     - EOF
+   - EOF
    - systemctl enable --now lynis-audit.timer
    - systemctl enable lynis-audit.service
   
@@ -539,10 +539,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - net.ipv4.icmp_ignore_bogus_error_responses=1
      - net.ipv4.icmp_echo_ignore_broadcasts=1
      - kernel.randomize_va_space=2
-     - EOF
-   - echo "kernel.dmesg_restrict=1" >> /etc/sysctl.d/99-hardening.conf
-   - echo "kernel.kptr_restrict=2" >> /etc/sysctl.d/99-hardening.conf
-   - echo "net.core.bpf_jit_harden=2" >> /etc/sysctl.d/99-hardening.conf
+     - kernel.dmesg_restrict=1
+     - kernel.kptr_restrict=2
+     - net.core.bpf_jit_harden=2 
+   - EOF
    - sysctl -p /etc/sysctl.d/99-hardening.conf
 
   **q) Audit SUID binaries:**
@@ -556,7 +556,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - [zram0]
      - zram-size = 50%
      - compression-algorithm = zstd
-     - EOF
+   - EOF
    - systemctl enable --now systemd-zram-setup@zram0.service
 
 ## Step 13: **Configure eGPU (Nvidia and AMD)**
@@ -570,15 +570,15 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - prime-run glxinfo | grep NVIDIA
     - nvidia-smi
   - Add environment variables for Nvidia:
-    - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> /etc/environment
+    - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> | sudo tee -a /etc/environment
   - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU. Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
-    - cat << 'EOF' > /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
+    - cat << 'EOF' | sudo tee /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
       - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
       - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; systemctl restart gdm'"
       - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
     - EOF
     - udevadm control --reload-rules && udevadm trigger
-    - echo "options nvidia-drm modeset=1" >> /etc/modprobe.d/nvidia.conf
+    - echo "options nvidia-drm modeset=1" | sudo tee /etc/modprobe.d/nvidia.conf
   - Enable PCIe hotplug:
     - echo "pciehp" | sudo tee /etc/modules-load.d/pciehp.conf
   - Check IOMMU groups for GPU passthrough
@@ -594,7 +594,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - pacman -S bolt
     - systemctl enable --now bolt
     - boltctl list  # Authorize the OCuLink dock if listed
-    - echo "always-auto-connect = true" >> /etc/boltd/boltd.conf
+    - echo "always-auto-connect = true" | sudo tee -a /etc/boltd/boltd.conf
   - Verufy eGPU detection
     - lspci -nnk
     - DRI_PRIME=1 glxinfo | grep "OpenGL renderer"  # Test AMD
@@ -605,13 +605,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - yay -S snapper
   - Create global filter:
     - mkdir -p /etc/snapper/filters
-    - echo -e "/home/.cache\n/tmp\n/run\n/.snapshots" > /etc/snapper/filters/global-filter.txt
+    - echo -e "/home/.cache\n/tmp\n/run\n/.snapshots" | sudo tee /etc/snapper/filters/global-filter.txt
   - Create configurations:
     - snapper --config root create-config /
     - snapper --config home create-config /home
     - snapper --config data create-config /data
   - Edit `/etc/snapper/configs/root`:
-    - cat << 'EOF' > /etc/snapper/configs/root
+    - cat << 'EOF' | sudo tee /etc/snapper/configs/root
       - TIMELINE_CREATE="yes"
       - TIMELINE_CLEANUP="yes"
       - TIMELINE_MIN_AGE="1800"
@@ -626,7 +626,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - FILTER="/etc/snapper/filters/global-filter.txt"
       - EOF
     - Edit `/etc/snapper/configs/home` and `/etc/snapper/configs/data` similarly, updating `SUBVOLUME` to `/home` and `/data`.
-      - cat << 'EOF' > /etc/snapper/configs/home
+      - cat << 'EOF' | sudo tee /etc/snapper/configs/home
       - TIMELINE_CREATE="yes"
       - TIMELINE_CLEANUP="yes"
       - TIMELINE_MIN_AGE="1800"
@@ -640,7 +640,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - SYNC_ACL="no"
       - FILTER="/etc/snapper/filters/global-filter.txt"
       - EOF
-      - cat << 'EOF' > /etc/snapper/configs/data
+      - cat << 'EOF' | sudo tee /etc/snapper/configs/data
       - TIMELINE_CREATE="yes"
       - TIMELINE_CLEANUP="yes"
       - TIMELINE_MIN_AGE="1800"
