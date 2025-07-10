@@ -55,6 +55,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - lsblk
     - mount /dev/sdX1 /mnt/usb # **Replace sdX1 with USB partition confirmed via lsblk previously executed**
     - cp /mnt/crypto_keyfile /mnt/usb/crypto_keyfile
+    - umount /mnt # Only unmount after keyfile is on the *actual* encrypted partition
        
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
@@ -133,7 +134,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - ping -c 3 archlinux.org
   - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
   - Copy DNS into the new system so it can resolve mirrors
-    - cp /etc/resolv.conf /mnt/etc/resolv.conf
+    - cp /etc/resolv.conf /mnt/etc/resolv.conf #Copying /etc/resolv.conf from the live environment can be problematic if your network configuration changes or if the live environment's DNS servers aren't reliable/private for your permanent installation. NetworkManager will typically manage resolv.conf once installed and enabled.
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Mirrorlist Before pacstrap
@@ -289,7 +290,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - sbctl sign -s /mnt/usb/EFI/BOOT/BOOTX64.EFI
     - After backing up to USB
      - umount /mnt/usb  # Replace with your USB mountpoint
-     - shred -u /root/luks-keyfile
    
   **f) Add Pacman Hook for UKI Regeneration:**
    - mkdir -p /etc/pacman.d/hooks
