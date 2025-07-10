@@ -212,7 +212,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
-    - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
+    - #It is alread iin step 8b sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
     - echo UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi" >> /etc/mkinitcpio.conf # Do not append UKI_OUTPUT_PATH directly to /etc/mkinitcpio.conf.
@@ -228,6 +228,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
    - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
+   - #Replace variable placeholder with actual number: $SWAP_OFFSET --> resume_offset=12345678  # Replace with actual output of btrfs inspect-internal map-swapfile
    - #if hotplug is not working consider looking some parameters i915.enable_psr=0 pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
