@@ -107,7 +107,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - #Manually edit /boot/loader/entries/arch.conf later to include resume_offset=$SWAP_OFFSET
     - cat /mnt/etc/fstab
 
-  - Edit with Nano /mnt/var/log 
+  - Edit with Nano /mnt/etc/fstab
       - Review existing entries (for `/`, `/boot`, `/home`, etc.) and adjust mount options for BTRFS subvolumes (e.g., `compress=zstd:3`, `ssd`, `nodatacow`, `noatime`).
       - Adjust ESP mount options:
       - For the Arch ESP (`/boot`), find the line added by `genfstab` and ensure `umask=0077` is present. It will look something like: `UUID=<ARCH_ESP_UUID_VALUE> /boot vfat defaults 0 2`. Change `defaults` to `umask=0077`:  
@@ -214,7 +214,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
-    - #It is alread in step 8b skip thios one sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
+    - #The Binaries is already completed in step 8b skip this action sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
     - cat <<'EOF' > /etc/mkinitcpio.d/linux.preset # Do not append UKI_OUTPUT_PATH directly to /etc/mkinitcpio.conf.
@@ -418,7 +418,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - chmod +x ~/.config/wayland-nvidia-run
    - gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
    - gsettings set org.gnome.desktop.interface scaling-factor 1.25
-   - echo 'prime-run %command%' > ~/.config/wayland-nvidia-run
 
  **c) Configure MAC randomization:**
    - mkdir -p /etc/NetworkManager/conf.d
@@ -450,7 +449,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     
  **g) Configure security limits:**
    - cat << 'EOF' >> /etc/security/limits.conf
-     - hard nproc 8192
+     - * hard nproc 8192
      - EOF
 
  **h) Configure auditd:**
