@@ -154,7 +154,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - pacman -Sy
 
 ## Step 6: **Set timezone, locale, and hostname**
-  - systemctl enable --now fstrim.timer
   - ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
   - hwclock --systohc
   - echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen
@@ -376,7 +375,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - yay -S --needed ttf-inter ttf-roboto noto-fonts ttf-ubuntu-font-family ttf-ibm-plex ttf-ubuntu-mono-nerd ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-hack ttf-iosevka ttf-source-code-pro ttf-dejavu ttf-anonymous-pro catppuccin-cursors-mocha nerd-fonts-jetbrains-mono
 
  **d) Enable services:**
-  - systemctl enable gdm bluetooth ufw auditd apparmor systemd-timesyncd tlp NetworkManager
+  - systemctl enable gdm bluetooth ufw auditd apparmor systemd-timesyncd tlp NetworkManager fstrim.timer
   - After enabling all systemd services, run systemctl --failed to check for misconfigurations or missing dependencies.
 
  **e) Configure Flatseal for Flatpak apps:**
