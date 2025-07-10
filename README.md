@@ -443,6 +443,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  **i) Configure AppArmor with Nvidia Exceptions:**
    - apparmor_parser -r /etc/apparmor.d/*
    - aa-complain /usr/bin/nvidia-smi /usr/bin/nvidia-settings
+   - cat << 'EOF' > /etc/apparmor.d/usr.bin.nvidia
+     - /usr/bin/nvidia-smi rix,
+     - /usr/bin/nvidia-settings rix,
+     - /dev/nvidia* rw,
+   - EOF
+   - apparmor_parser -r /etc/apparmor.d/usr.bin.nvidia 
 
  **j) Configure dnscrypt-proxy:**
    - systemctl enable --now dnscrypt-proxy
