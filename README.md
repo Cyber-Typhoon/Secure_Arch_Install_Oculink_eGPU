@@ -380,7 +380,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - After enabling all systemd services, run systemctl --failed to check for misconfigurations or missing dependencies.
 
  **e) Configure Flatseal for Flatpak apps:**
-  - flatpak override --user --nofilesystem=host
+  - flatpak override --user --filesystem=home
   - flatpak override --user com.valvesoftware.Steam --device=dri  # Allow eGPU access
 
  **f) Configure Bubblejail for Alacritty and Conky:**
@@ -476,7 +476,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - /usr/bin/nvidia-settings r,
      - /dev/nvidia* rw,
    - EOF
-   - apparmor_parser -r /etc/apparmor.d/usr.bin.nvidia 
+   - apparmor_parser -r /etc/apparmor.d/usr.bin.nvidia
+   - find /usr/lib/modules/$(uname -r) -name 'nvidia*.ko' #Nvidia driver updates may introduce new kernel modules or change paths. Periodically review the paths to Nvidia modules. Update the AppArmor profile as needed. 
 
  **j) Configure dnscrypt-proxy:**
    - systemctl enable --now dnscrypt-proxy
