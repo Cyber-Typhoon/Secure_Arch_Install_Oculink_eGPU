@@ -47,9 +47,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Encrypt the BTRFS partition:
     - cryptsetup luksFormat --type luks2 /dev/nvme1n1p2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000000
     - cryptsetup luksOpen /dev/nvme1n1p2 cryptroot
-    - dd if=/dev/random of=/mnt/root/luks-keyfile bs=512 count=4 iflag=fullblock
-    - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/root/luks-keyfile
-    - chmod 600 /mnt/root/luks-keyfile
+    - dd if=/dev/random of=/mnt/crypto_keyfile bs=512 count=4 iflag=fullblock
+    - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/crypto_keyfile
+    - chmod 600 /mnt/crypto_keyfile
   
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
@@ -100,9 +100,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - swapon /mnt/swap/swapfile
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
+    - swapoff /mnt/swap/swapfile
+    - umount /mnt/swap 
     - echo "/swap/swapfile none swap defaults,discard=async,noatime,offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
     - swapon -s  # Should show /mnt/swap/swapfile
-    - swapoff /mnt/swap/swapfile
     - cat /mnt/etc/fstab
 
   - Edit with nano /mnt/etc/fstab #offset=$(cat /mnt/etc/swap_offset) in fstab comment: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
@@ -135,6 +136,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - pacstrap /mnt base base-devel linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack
   - Chroot into the system:
     - arch-chroot /mnt systemctl enable --now fstrim.timer
+    - mv /crypto_keyfile /root/luks-keyfile
+    - chmod 600 /root/luks-keyfile
   - Keyring initialization step
     - nano /etc/pacman.conf uncomment [multilib]
     - add **Include = /etc/pacman.d/mirrorlist** below the [core], [extra], [community], and [multilib] sections in /etc/pacman.conf
@@ -173,6 +176,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - cryptsetup luksAddKey /dev/nvme1n1p2 /root/luks-keyfile
    - chmod 600 /root/luks-keyfile
    - systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme1n1p2
+   - cryptsetup luksDump /dev/nvme1n1p2 | grep -i tpm
+   - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs \/usr\/bin\/tpm2-tss-engine)/' /etc/mkinitcpio.conf
+   - mkinitcpio -P
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
    - tpm2_pcrread sha256 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
@@ -209,11 +215,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   **c) Create Boot Entries:**
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
-  - SWAP_OFFSET=$(< /etc/swap_offset)
+  - SWAP_OFFSET=$(cat /etc/swap_offset)
   - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1 #if hotplug is not working consider looking some parameters pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot rd.luks.key=/root/luks-keyfile root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash i915.enable_psr=0 intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1 #if hotplug is not working consider looking some parameters pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
    - title Windows
@@ -363,17 +369,16 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 **a) Configure Power Management:**
    - systemctl enable --now tlp
    - systemctl mask power-profiles-daemon
-   - echo -e "CPU_SCALING_GOVERNOR=schedutil\nSOUND_POWER_SAVE_ON_AC=0" >> /etc/tlp.conf
+   - systemctl disable power-profiles-daemon 
      - cat << 'EOF' > /etc/systemd/system/powertop.service
        - [Unit]
        - Description=Powertop Auto-Tune
-       - After=multi-user.target
+       - After=multi-user.target suspend.target hibernate.target hybrid-sleep.target 
        - [Service]
        - Type=oneshot
        - ExecStart=/usr/bin/powertop --auto-tune
-       - RemainAfterExit=yes
        - [Install]
-       - WantedBy=multi-user.target
+       - WantedBy=multi-user.target suspend.target hibernate.target hybrid-sleep.target
        - EOF
      - systemctl enable --now powertop.service
 
@@ -396,16 +401,19 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - cat << 'EOF' > /etc/NetworkManager/conf.d/00-macrandomize.conf
      - [device]
      - wifi.scan-rand-mac-address=yes
+     - device.mac-randomization=1 
      - [connection]
      - wifi.cloned-mac-address=random
      - EOF
    - systemctl restart NetworkManager
+   - nmcli connection down <connection_name> && nmcli connection up <connection_name>
    
  **d) Configure firewall:**
    - systemctl enable --now ufw
-   - ufw enable
+   - ufw allow ssh 
    - ufw default deny incoming
    - ufw default allow outgoing
+   - ufw enable
 
  **e) Configure GNOME privacy:**
    - gsettings set org.gnome.desktop.privacy send-software-usage-info false
@@ -457,12 +465,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
   **l) Enable `fapolicyd` with Nvidia exceptions, `sshguard`, `rkhunter`:**
    - pacman -S fapolicyd
-   - systemctl enable --now fapolicyd
    - echo "/usr/bin/nvidia-smi trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
    - echo "/usr/bin/nvidia-settings trusted" >> /etc/fapolicyd/rules.d/90-custom.rules
+   - systemctl enable --now fapolicyd
    - systemctl restart fapolicyd
-   - systemctl enable --now sshguard
-   - rkhunter --propupd
 
   **m) Run Lynis audit and create timer:**
    - lynis audit system
@@ -483,6 +489,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - ExecStart=/usr/bin/lynis audit system
      - EOF
    - systemctl enable --now lynis-audit.timer
+   - systemctl enable lynis-audit.service
   
   **n) Configure AIDE:**
    - yay -S aide
@@ -498,7 +505,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - net.ipv4.conf.default.rp_filter=1
      - net.ipv4.conf.all.rp_filter=1
      - net.ipv4.tcp_syncookies=1
-     - net.ipv4.ip_forward=0
+     - net.ipv4.ip_forward=1
      - net.ipv4.conf.all.accept_redirects=0
      - net.ipv6.conf.all.accept_redirects=0
      - net.ipv4.conf.default.accept_redirects=0
@@ -523,11 +530,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - find / -perm -4000 -type f -exec ls -l {} \; > /data/suid_audit.txt
    - cat /data/suid_audit.txt # Remove SUID from non-essential binaries
    - chmod u-s /usr/bin/ping
+   - setcap cap_net_raw+ep /usr/bin/ping
 
   **r) Configure zram:**
    - cat << 'EOF' > /etc/systemd/zram-generator.conf
      - [zram0]
-     - zram-size = ram / 2
+     - zram-size = 50%
      - compression-algorithm = zstd
      - EOF
    - systemctl enable --now systemd-zram-setup@zram0.service
@@ -568,7 +576,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install bolt for Thunderbolt/OCuLink device management
     - pacman -S bolt
     - systemctl enable --now bolt
-    - boltctl list  # Authorize the OCuLink dock if listed 
+    - boltctl list  # Authorize the OCuLink dock if listed
+    - echo "always-auto-connect = true" >> /etc/boltd/boltd.conf 
    
 ## Step 14: **Configure Snapper**
   - Install Snapper:
@@ -640,6 +649,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install chezmoi:
     - yay -S chezmoi
     - chezmoi init --apply
+    - chezmoi add ~/.zshrc ~/.config/gnome
+    - chezmoi cd
+    - git add . && git commit -m "Initial dotfiles"
    
  ## Step 16: **Test the Setup**
   - Reboot and confirm `systemd-boot` shows Arch and Windows entries.
