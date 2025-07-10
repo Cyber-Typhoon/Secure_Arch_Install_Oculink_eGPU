@@ -22,8 +22,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Disable Windows Fast Startup to prevent ESP lockout (Powershell): powercfg /h off
    - Disable Windows Bitlocker (Powershell): a) manage-bde -status b) Disable-BitLocker -MountPoint "C:" c) powercfg /a
    - Verify TPM 2.0 is active: `tpm.msc`. Clear TPM if previously provisioned (Powershell): tpm.msc
-   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `dmesg | grep -i "BAR.*size"` (in Linux later).
-   - Check Oculink support 'dmidecode -t bios'
+   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or wmic path Win32_VideoController get CurrentBitsPerPixel,VideoMemoryType or `dmesg | grep -i "BAR.*size"` (in Linux later).
+   - Check Oculink support 'dmidecode -s bios-version'
    - Verify NVMe drives: `lsblk` in a live environment or **Windows Disk Management**.
    - **optional** Shrink Windows partition using Disk Management to ensure space for Linux ESP if using a single ESP (**optional; plan uses separate ESPs**).
 
@@ -51,8 +51,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - dd if=/dev/random of=/mnt/crypto_keyfile bs=512 count=4 iflag=fullblock
     - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/crypto_keyfile
     - chmod 600 /mnt/crypto_keyfile
+    - mkdir -p /mnt/usb
+    - mount /dev/sdX1 /mnt/usb # **Replace sdX1 with USB partition confirmed via lsblk**
     - cp /mnt/crypto_keyfile /mnt/usb/crypto_keyfile
-  
+       
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
   - Create subvolumes for `@`, `@snapshots`, `@home`, `@data`, `@var`, `@var_lib`, `@log`, `@swap`, `@srv`:
@@ -75,7 +77,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@var,nodatacow,noatime /dev/mapper/cryptroot /mnt/var
     - mount -o subvol=@var_lib,nodatacow,noatime /dev/mapper/cryptroot /mnt/var/lib
     - mount -o subvol=@log,nodatacow,noatime /dev/mapper/cryptroot /mnt/var/log
-    - mount -o subvol=@swap,nodatacow, /dev/mapper/cryptroot /mnt/swap
+    - mount -o subvol=@swap,nodatacow,noatime /dev/mapper/cryptroot /mnt/swap
     - mount -o subvol=@srv,compress=zstd:3,ssd /dev/mapper/cryptroot /mnt/srv
     - mount /dev/nvme1n1p1 /mnt/boot
     - mount /dev/nvme0n1p1 /mnt/windows-efi
@@ -100,7 +102,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - umount /mnt/swap 
-    - echo "/swap/swapfile none swap defaults,discard=async,noatime,offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
+    - echo "/swap/swapfile none swap defaults,discard=async,noatime 0 0" >> /mnt/etc/fstab
     - cat /mnt/etc/fstab
 
   - Edit with Nano /mnt/var/log 
@@ -122,14 +124,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - Add `tmpfs` entries at the end of the file:
         - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
         - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
-      - Add `swapfile` entry at the end of the file with the actual numerical offset:
-        - UUID=$ROOT_UUID /swap/swapfile none swap defaults,discard=async,noatime,subvol=@swap,offset=$SWAP_OFFSET 0 0
       - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e
       - cat /mnt/etc/fstab
  
 **f) Check network**:
   - ping -c 3 archlinux.org
   - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
+  - chmod 644 /mnt/etc/resolv.conf
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf
 
@@ -138,7 +139,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - pacman -Sy reflector  
     - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist  
   - Install base system:
-    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring
+    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring arch-install-scripts
   - Chroot into the system:
     - arch-chroot /mnt 
     - mv /crypto_keyfile /root/luks-keyfile
@@ -186,7 +187,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - mkinitcpio -P
   - Update crypttab:
    - echo "cryptroot /dev/nvme1n1p2 /root/luks-keyfile luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
-   - tpm2_pcrread sha256 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
+   - tpm2_pcrread sha256:0,7 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
   - Back up keyfile to a secure USB:
    - lsblk 
    - mkfs.fat -F32 /dev/sdb1
@@ -226,7 +227,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
+   - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
    - #if hotplug is not working consider looking some parameters i915.enable_psr=0 pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
@@ -236,8 +237,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
    - title Arch Linux (Fallback)
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
-  - EOF 
+   - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
+  - EOF
+
   
   **d) Set Boot Order:**
    - Pin Arch first:
@@ -300,6 +302,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl enroll-keys --tpm-eventlog
    - **Reboot and enroll keys in UEFI firmware when prompted** After reboot, in chroot: 
    - sbctl sign -s /boot/EFI/Linux/arch.efi
+   - sbctl sign -s /boot/EFI/Linux/arch-fallback.efi
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
 
 
@@ -344,9 +347,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - pacman -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - After installing yay Configure to show PKGBUILD diffs
-    - yay -Yc --diffmenu true --answerdiff All || { echo "Failed to configure yay"; exit 1; }
+    - yay -Y --diffmenu --answerdiff=All || { echo "Failed to configure yay"; exit 1; }
    - Verify yay to show PKGBUILD diffs
-    - grep -E 'diffmenu|answerdiff' ~/.config/yay/config.json
+    - yay -Pg | grep -E 'diffmenu|answerdiff'
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
    - pacman -S yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth opensnitch
   - Install applications via Flatpak:
@@ -400,8 +403,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - EOF
    - cat << 'EOF' > ~/.config/wayland-nvidia-run
      - GBM_BACKEND=nvidia-drm
-     - LIBVA_DRIVER_NAME=nvidia prime-run "$@"
-   - EOF 
+     - LIBVA_DRIVER_NAME=nvidia
+   - EOF
+   - chmod +x ~/.config/wayland-nvidia-run
    - gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
    - gsettings set org.gnome.desktop.interface scaling-factor 1.25
    - echo 'prime-run %command%' > ~/.config/wayland-nvidia-run
@@ -411,7 +415,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - cat << 'EOF' > /etc/NetworkManager/conf.d/00-macrandomize.conf
      - [device]
      - wifi.scan-rand-mac-address=yes
-     - device.mac-randomization=1 
+     - device.wifi.scan-rand-mac-address=yes
      - [connection]
      - wifi.cloned-mac-address=random
      - EOF
@@ -464,7 +468,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
    - cat << 'EOF' > /etc/dnscrypt-proxy/dnscrypt-proxy.toml
-     - server_names = ["quad9-dnscrypt", "adguard-dns", "nextdns", "controld", "mullvad"]
+     - server_names = ["quad9-dnscrypt-ip4-filter-pri", "adguard-dns-family", "nextdns-ultralow", "controld-dns", "mullvad-doh"]
      - listen_addresses = ["127.0.0.1:53", "[::1]:53"]
      - require_dnssec = true
      - require_nolog = true
@@ -652,6 +656,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - EOF
     - Enable Snapper:
       - systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+    - Config permissions:
+     - chmod 640 /etc/snapper/configs/* 
     - Verify configuration:
       - snapper --config root get-config
       - snapper --config home get-config
@@ -661,6 +667,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - snapper --config home create --description "Initial test snapshot"
       - snapper --config data create --description "Initial test snapshot"
       - snapper list
+        
      
  ## Step 15: **Configure Dotfiles**
   - Install chezmoi:
@@ -695,7 +702,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  - Test hibernation:
    - systemctl hibernate
    - dmesg | grep -i "hibernate\|swap" # After resuming, check dmesg for errors
-   - filefrag -v /swap/swapfile  # Ensure no fragmentation
+   - filefrag -v /mnt/swap/swapfile  # Ensure no fragmentation
    - systemctl enable systemd-hibernate-resume.service
  - Test fwupd
    - fwupdmgr refresh
@@ -723,7 +730,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  - Test AUR builds with /tmp (no noexec)
    - yay --builddir ~/.cache/yay_build
  - Test Nvidia CUDA apps
-   - prime-run blender 
+   - prime-run blender
+ - Verify Security Boot
+   - mokutil --sb-state 
 
  ## Step 17: **Create Recovery Documentation**
   - Document UEFI password, LUKS passphrase, keyfile location, MOK password, and recovery steps in Bitwarden.
