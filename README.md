@@ -20,9 +20,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Review the guides for additional Privacy on the post installation [Group Police](https://www.privacyguides.org/en/os/windows/group-policies/), [Windows Privacy Settings](https://discuss.privacyguides.net/t/windows-privacy-settings/27333) and [Windows Post-Install Hardening Guide](https://discuss.privacyguides.net/t/windows-post-install-hardening-guide/27335)
    - Update BIOS and Firmware (TPM updates) via Lenovo Vantage Application or Website
    - Disable Windows Fast Startup to prevent ESP lockout (Powershell): powercfg /h off
-   - Disable Windows Bitlocker (Powershell): a) manage-bde -status b) manage-bde -off C: c) powercfg /a
+   - Disable Windows Bitlocker (Powershell): a) manage-bde -status b) Disable-BitLocker -MountPoint "C:" c) powercfg /a
    - Verify TPM 2.0 is active: `tpm.msc`. Clear TPM if previously provisioned (Powershell): tpm.msc
-   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `sudo dmesg | grep -i "BAR.*size"` (in Linux later).
+   - Verify Windows boots correctly and **check Resizable BAR sizes in Device Manager** or `dmesg | grep -i "BAR.*size"` (in Linux later).
    - Check Oculink support 'dmidecode -t bios'
    - Verify NVMe drives: `lsblk` in a live environment or **Windows Disk Management**.
    - **optional** Shrink Windows partition using Disk Management to ensure space for Linux ESP if using a single ESP (**optional; plan uses separate ESPs**).
@@ -35,7 +35,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
 
   **a) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
-  - parted /dev/nvme1n1 --script mklabel gpt mkpart ESP fat32 1MiB 1GiB set 1 esp on mkpart crypt btrfs 1GiB 100% quit
+  - parted /dev/nvme1n1 --script mklabel gpt mkpart ESP fat32 1MiB 1GiB set 1 esp on mkpart crypt btrfs 1GiB 100% align-check optimal 1 quit
   - lsblk -f /dev/nvme0n1 /dev/nvme1n1  # Confirm /dev/nvme0n1p1 (Windows ESP) and /dev/nvme1n1p1 (Arch ESP)
   - efibootmgr  # Check if UEFI recognizes both ESPs
     
@@ -47,15 +47,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - cryptsetup luksFormat --type luks2 /dev/nvme1n1p2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000000
     - cryptsetup luksOpen /dev/nvme1n1p2 cryptroot
     - mkfs.btrfs /dev/mapper/cryptroot
-    - mount /dev/mapper/cryptroot /mnt 
+    - mount /dev/mapper/cryptroot /mnt
     - dd if=/dev/random of=/mnt/crypto_keyfile bs=512 count=4 iflag=fullblock
     - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/crypto_keyfile
     - chmod 600 /mnt/crypto_keyfile
+    - cp /mnt/crypto_keyfile /mnt/usb/crypto_keyfile
   
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
-    - mkfs.btrfs /dev/mapper/cryptroot
-    - mount /dev/mapper/cryptroot /mnt
   - Create subvolumes for `@`, `@snapshots`, `@home`, `@data`, `@var`, `@var_lib`, `@log`, `@swap`, `@srv`:
     - btrfs subvolume create /mnt/@
     - btrfs subvolume create /mnt/@snapshots
@@ -70,7 +69,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Mount subvolumes with optimized options:
     - mkdir -p /mnt/{boot,windows-efi,.snapshots,home,data,var,var/lib,var/log,swap,srv}
     - mount -o subvol=@,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt
-    - mount -o subvol=@snapshots,ssd /dev/mapper/cryptroot /mnt/.snapshots
+    - mount -o subvol=@snapshots,ssd,noatime /dev/mapper/cryptroot /mnt/.snapshots
     - mount -o subvol=@home,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/home
     - mount -o subvol=@data,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/data
     - mount -o subvol=@var,nodatacow,noatime /dev/mapper/cryptroot /mnt/var
@@ -95,14 +94,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
     - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
-    - fallocate -l 24G /mnt/swap/swapfile || { echo "fallocate failed"; exit 1; }
+    - btrfs filesystem mkswapfile -s 24G /mnt/swap/swapfile || { echo "btrfs filesystem failed"; exit 1; }
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile || { echo "mkswap failed"; exit 1; }
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - umount /mnt/swap 
     - echo "/swap/swapfile none swap defaults,discard=async,noatime,offset=$SWAP_OFFSET 0 0" >> /mnt/etc/fstab
-    - swapon -s  # Should show /mnt/swap/swapfile
     - cat /mnt/etc/fstab
 
   - Edit with Nano /mnt/var/log 
@@ -125,14 +123,13 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
         - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
         - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
       - Add `swapfile` entry at the end of the file with the actual numerical offset:
-        - /swap/swapfile none swap defaults,discard=async,noatime,offset=$SWAP_OFFSET 0 0
+        - UUID=$ROOT_UUID /swap/swapfile none swap defaults,discard=async,noatime,subvol=@swap,offset=$SWAP_OFFSET 0 0
       - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e
-      - swapoff /mnt/swap/swapfile
       - cat /mnt/etc/fstab
  
 **f) Check network**:
   - ping -c 3 archlinux.org
-  - iwctl device wifi connect <SSID> password <password>  # If using Wi-Fi
+  - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf
 
@@ -141,7 +138,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - pacman -Sy reflector  
     - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist  
   - Install base system:
-    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack
+    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring
   - Chroot into the system:
     - arch-chroot /mnt 
     - mv /crypto_keyfile /root/luks-keyfile
@@ -161,7 +158,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - locale-gen
   - echo 'LANG=en_US.UTF-8' > /etc/locale.conf
   - echo 'thinkbook' > /etc/hostname
-  - cat << 'EOF' > /etc/hosts
+  - cat <<'EOF' > /etc/hosts
     - 127.0.0.1 localhost
     - ::1 localhost
     - 127.0.1.1 thinkbook.localdomain thinkbook
@@ -176,10 +173,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Configure `sudo`:
     - sed -i '/^# %wheel ALL=(ALL:ALL) ALL/s/^# //' /etc/sudoers
 
-## Step 8: **Set Up TPM and LUKS2 (re-enable Secure Boot in UEFI)**
+## Step 8: **Set Up TPM and LUKS2 (re-enable Secure Boot in UEFI - replace sdb1 with sd#1 confirmed via lsblk)**
 
   **a) Install tpm2-tools:**
-   - pacman -S --noconfirm tpm2-tools
+   - pacman -S --noconfirm tpm2-tools tpm2-tss
 
   **b) Bind LUKS2 Key to TPM:**
   - Enroll LUKS key:
@@ -188,7 +185,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
    - mkinitcpio -P
   - Update crypttab:
-   - echo "cryptroot /dev/nvme1n1p2 none luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
+   - echo "cryptroot /dev/nvme1n1p2 /root/luks-keyfile luks,tpm2-device=auto,tpm2-pcrs=0+7" >> /etc/crypttab
    - tpm2_pcrread sha256 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
   - Back up keyfile to a secure USB:
    - lsblk 
@@ -203,19 +200,20 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - Install and configure:
      - pacman -S --noconfirm plymouth
      - plymouth-set-default-theme -R bgrt
-     - grep HOOKS /etc/mkinitcpio.conf # Ensure the order is: base systemd autodetect modconf block plymouth sd-encrypt resume filesystems. Incorrect order can cause Plymouth to fail or LUKS to prompt incorrectly. Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate.
+     - sed -i 's/HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
+     - '# Ensure the order is: base systemd autodetect modconf block plymouth sd-encrypt resume filesystems. Incorrect order can cause Plymouth to fail or LUKS to prompt incorrectly. Ensure `plymouth` is before `sd-encrypt` in `/etc/mkinitcpio.conf` HOOKS and regenerate.
      - mkinitcpio -P  
      
 ## Step 9: **Configure systemd-boot with UKI**
   **a) Install systemd-boot:**
   - mount /dev/nvme1n1p1 /boot
-  - bootctl --esp-path=/boot install
+  - bootctl --esp-path=/boot --no-variables install
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
     - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme)/' /etc/mkinitcpio.conf
-    - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems)/' /etc/mkinitcpio.conf
+    - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
     - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
     - mkinitcpio -P
   - Verify HOOKS order
@@ -225,10 +223,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
   - SWAP_OFFSET=$(cat /etc/swap_offset)
-  - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
+  - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
-   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
+   - options rd.luks.name=$LUKS_UUID=cryptroot root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
    - #if hotplug is not working consider looking some parameters i915.enable_psr=0 pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
   - cat << 'EOF' > /boot/loader/entries/windows.conf
@@ -256,7 +254,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - mkinitcpio -P -c /etc/mkinitcpio-minimal.conf
      - sbctl sign -s /boot/EFI/Linux/arch-fallback.efi
    - Create GRUB USB for recovery:
-     - **Replace /dev/sdX1 with your USB partition**
+     - **Replace /dev/sdb1 with your USB partition confirmed via lsblk)**
      - mkfs.fat -F32 -n RESCUE_USB /dev/sdX1
      - mkdir -p /mnt/usb
      - mount /dev/sdX1 /mnt/usb
@@ -270,7 +268,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) 
      - cat << 'EOF' > /mnt/usb/grub/grub.cfg
        - set timeout=5
-       - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot cryptkey=/luks-keyfile root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
+       - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot cryptkey=UUID=$(blkid -s UUID -o value /dev/sdb1):fat32:/luks-keyfile root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
      - sbctl sign -s /mnt/usb/EFI/BOOT/BOOTX64.EFI
     - After backing up to USB
@@ -295,7 +293,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 ## Step 10: **Configure Secure Boot** 
 
   **a) Install sbctl:**
-   - pacman -S sbctl
+   - pacman -S sbctl sbsign
 
   **b) Generate and Enroll MOKs:**
    - sbctl create-keys
@@ -346,7 +344,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - pacman -S thinklmi
   - Check BIOS settings: sudo thinklmi
   - After installing yay Configure to show PKGBUILD diffs
-    - yay --save --diffmenu=yes --answerdiff=All || { echo "Failed to configure yay"; exit 1; }
+    - yay -Yc --diffmenu true --answerdiff All || { echo "Failed to configure yay"; exit 1; }
    - Verify yay to show PKGBUILD diffs
     - grep -E 'diffmenu|answerdiff' ~/.config/yay/config.json
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
@@ -386,6 +384,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        - [Service]
        - Type=oneshot
        - ExecStart=/usr/bin/powertop --auto-tune
+       - RemainAfterExit=yes
        - [Install]
        - WantedBy=multi-user.target suspend.target hibernate.target hybrid-sleep.target
      - EOF
@@ -447,7 +446,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - -w /etc/passwd -p wa -k passwd_changes
      - -w /etc/shadow -p wa -k shadow_changes
      - -a always,exit -F arch=b64 -S execve -k exec
-     - -e 2
      - EOF
   - systemctl restart auditd
 
@@ -558,8 +556,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemctl enable --now systemd-zram-setup@zram0.service
 
 ## Step 13: **Configure eGPU (Nvidia and AMD)**
-  - Install AMD drivers for first testing
-    - yay -S mesa libva-mesa-driver
   - Identify eGPU dock PCI ID:
     - lspci -nn | grep -i "bridge.*oculink" 
   - Verify eGPU detection:
@@ -605,7 +601,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - yay -S snapper
   - Create global filter:
     - mkdir -p /etc/snapper/filters
-    - echo -e "/home/.cache\n/tmp\n/run" > /etc/snapper/filters/global-filter.txt
+    - echo -e "/home/.cache\n/tmp\n/run\n/.snapshots" > /etc/snapper/filters/global-filter.txt
   - Create configurations:
     - snapper --config root create-config /
     - snapper --config home create-config /home
@@ -671,7 +667,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - yay -S chezmoi
     - chezmoi init --apply
     - chezmoi add ~/.zshrc
-    - chezmoi add ~/.config/gnome
+    - chezmoi add -r ~/.config/gnome
     - dconf dump /org/gnome/ > ~/.config/gnome-settings.dconf
     - chezmoi add ~/.config/gnome-settings.dconf
     - chezmoi cd
@@ -700,6 +696,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - systemctl hibernate
    - dmesg | grep -i "hibernate\|swap" # After resuming, check dmesg for errors
    - filefrag -v /swap/swapfile  # Ensure no fragmentation
+   - systemctl enable systemd-hibernate-resume.service
  - Test fwupd
    - fwupdmgr refresh
    - fwupdmgr update
@@ -717,7 +714,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - yay -S stress-ng memtester fio
    - stress-ng --cpu 4 --io 2 --vm 2 --vm-bytes 1G --timeout 72h
    - memtester 1024 5
-   - fio --name=write_test --filename=/data/test --size=1G --rw=write
+   - fio --name=write_test --filename=/data/fio_test --size=1G --rw=write
  - Verify Wayland
    - echo $XDG_SESSION_TYPE
  - Verify Security
@@ -731,7 +728,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  ## Step 17: **Create Recovery Documentation**
   - Document UEFI password, LUKS passphrase, keyfile location, MOK password, and recovery steps in Bitwarden.
   - Create a recovery USB with Arch ISO, minimal UKI, and `systemd-cryptsetup`.
-    - dd if=archlinux-<version>-x86_64.iso of=/dev/sdb bs=4M status=progress 
+    - dd if=archlinux-<version>-x86_64.iso of=/dev/sdb bs=4M status=progress oflag=sync 
   - Back up LUKS header and SBCTL keys:
     - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /path/to/luks-header-backup
     - cp -r /etc/sbctl /path/to/backup/sbctl-keys
