@@ -52,7 +52,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - cryptsetup luksAddKey /dev/nvme1n1p2 /mnt/crypto_keyfile
     - chmod 600 /mnt/crypto_keyfile
     - mkdir -p /mnt/usb
-    - mount /dev/sdX1 /mnt/usb # **Replace sdX1 with USB partition confirmed via lsblk**
+    - lsblk
+    - mount /dev/sdX1 /mnt/usb # **Replace sdX1 with USB partition confirmed via lsblk previously executed**
     - cp /mnt/crypto_keyfile /mnt/usb/crypto_keyfile
        
   **d) Create BTRFS Filesystem and Subvolumes**:
@@ -96,13 +97,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
     - touch /mnt/swap/swapfile
     - chattr +C /mnt/swap/swapfile
-    - btrfs filesystem mkswapfile -s 24G /mnt/swap/swapfile || { echo "btrfs filesystem failed"; exit 1; }
+    - fallocate -l 24G /mnt/swap/swapfile || { echo "fallocate failed"; exit 1; }
     - chmod 600 /mnt/swap/swapfile
     - mkswap /mnt/swap/swapfile || { echo "mkswap failed"; exit 1; }
     - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile)
     - echo $SWAP_OFFSET > /mnt/etc/swap_offset
     - umount /mnt/swap 
     - echo "/swap/swapfile none swap defaults,discard=async,noatime 0 0" >> /mnt/etc/fstab
+    - #Manually edit /boot/loader/entries/arch.conf later to include resume_offset=$SWAP_OFFSET
     - cat /mnt/etc/fstab
 
   - Edit with Nano /mnt/var/log 
@@ -119,25 +121,24 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        - UUID=$ROOT_UUID /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime 0 0
        - UUID=$ROOT_UUID /var btrfs subvol=@var,nodatacow,noatime 0 0
        - UUID=$ROOT_UUID /var/lib btrfs subvol=@var_lib,nodatacow,noatime 0 0
-       - UUID=$ROOT_UUID /var/log btrfs subvol=@log,nodatacow,noatime,noexec 0 0
+       - UUID=$ROOT_UUID /var/log btrfs subvol=@log,nodatacow,noatime 0 0
        - UUID=$ROOT_UUID /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0 
       - Add `tmpfs` entries at the end of the file:
-        - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
-        - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
+        - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
+        - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
       - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e Manually insert the numerical offset into fstab for the swap file entry. Ensure the swap offset in /etc/fstab is the actual numerical value, not a shell substitution or variable.
       - cat /mnt/etc/fstab
  
 **f) Check network**:
   - ping -c 3 archlinux.org
   - nmcli device wifi connect <SSID> password <password>  # If using Wi-Fi
-  - chmod 644 /mnt/etc/resolv.conf
   - Copy DNS into the new system so it can resolve mirrors
     - cp /etc/resolv.conf /mnt/etc/resolv.conf
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Mirrorlist Before pacstrap
     - pacman -Sy reflector  
-    - reflector --latest 10 --sort rate --save /mnt/etc/pacman.d/mirrorlist  
+    - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist  
   - Install base system:
     - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring arch-install-scripts
   - Chroot into the system:
@@ -190,11 +191,12 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - tpm2_pcrread sha256:0,7 #Ensure PCRs 0 and 7 (firmware and Secure Boot state) are stable across reboots. If PCR values change unexpectedly, TPM unlocking may fail, requiring the LUKS passphrase. 
   - Back up keyfile to a secure USB:
    - lsblk 
-   - mkfs.fat -F32 /dev/sdb1
+   - mkfs.fat -F32 /dev/sdb1 **Replace sdb1 with USB partition confirmed via lsblk previously executed**
    - mkdir -p /mnt/usb
-   - mount /dev/sdb1 /mnt/usb 
+   - mount /dev/sdb1 /mnt/usb **Replace sdb1 with USB partition confirmed via lsblk previously executed**
    - cryptsetup luksHeaderBackup /dev/nvme1n1p2 --header-backup-file /mnt/usb/luks-header-backup
    - tpm2_exportpolicy --policy=/mnt/usb/tpm2-policy.bin --tpm-device=/dev/tpmrm0 --pcr-bank=sha256 --pcr-ids=0,7 /dev/nvme1n1p2
+   - tpm2_createpolicy --policy-pcr -l sha256:0,7 -L /mnt/usb/tpm2-policy.bin **execute this one if the command above doesn't work, otherwise skip this step**
    - umount /mnt/usb
 
   **c) Enable Plymouth:**
@@ -212,10 +214,14 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
        
   **b) Configure mkinitcpio for UKI:**
   - Edit `/etc/mkinitcpio.conf`:
-    - #It is alread iin step 8b sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
+    - #It is alread in step 8b skip thios one sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
-    - echo UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi" >> /etc/mkinitcpio.conf # Do not append UKI_OUTPUT_PATH directly to /etc/mkinitcpio.conf.
+    - cat <<'EOF' > /etc/mkinitcpio.d/linux.preset # Do not append UKI_OUTPUT_PATH directly to /etc/mkinitcpio.conf.
+      - default_uki="/boot/EFI/Linux/arch.efi"
+      - default_options="rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1"
+      - all_config="/etc/mkinitcpio.conf" 
+    - EOF
     - mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
@@ -224,18 +230,18 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
   - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot)
   - SWAP_OFFSET=$(cat /etc/swap_offset)
-  - cat <<'EOF' > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
+  - cat <<EOF > /boot/loader/entries/arch.conf # Should include resume=UUID=$ROOT_UUID -- Clarified that the swap file offset in /etc/fstab must be the literal numerical value from SWAP_OFFSET, not a command substitution. manually insert the numerical offset into fstab.
    - title Arch Linux
    - linux /EFI/Linux/arch.efi
    - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID resume=UUID=$ROOT_UUID resume_offset=$SWAP_OFFSET rw quiet nvidia-drm.modeset=1 splash intel_iommu=on iommu=pt pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
    - #Replace variable placeholder with actual number: $SWAP_OFFSET --> resume_offset=12345678  # Replace with actual output of btrfs inspect-internal map-swapfile
    - #if hotplug is not working consider looking some parameters i915.enable_psr=0 pci=nomsi or pci=nocrs or pcie_ports=native or pciehp.pciehp_force=1
    - EOF
-  - cat << 'EOF' > /boot/loader/entries/windows.conf
+  - cat <<'EOF' > /boot/loader/entries/windows.conf
    - title Windows
    - loader /EFI/Microsoft/Boot/bootmgfw.efi
    - EOF
-  - cat << 'EOF' > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
+  - cat <<EOF > /boot/loader/entries/arch-fallback.conf # fallback boot entry with minimal options for recovery
    - title Arch Linux (Fallback)
    - linux /EFI/Linux/arch.efi
    - options rd.luks.uuid=$LUKS_UUID root=UUID=$ROOT_UUID rw pci=pcie_bus_perf,realloc mitigations=auto,nosmt slab_nomerge slub_debug=FZ init_on_alloc=1 init_on_free=1
@@ -244,8 +250,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   
   **d) Set Boot Order:**
    - Pin Arch first:
-     - BOOT_ARCH=$(efibootmgr | awk '/Arch Linux/ {gsub(/Boot/, ""); print $1}')
-     - BOOT_WIN=$(efibootmgr | awk '/Windows/    {gsub(/Boot/, ""); print $1}')
+     - BOOT_ARCH=$(efibootmgr | grep 'Arch Linux' | awk '{print $1}' | sed 's/Boot//;s/*//')
+     - BOOT_WIN=$(efibootmgr | grep 'Windows' | awk '{print $1}' | sed 's/Boot//;s/*//')
      - efibootmgr --bootorder ${BOOT_ARCH},${BOOT_WIN}  # Ensure both Arch and Windows entries are listed
   
   **e) Create Fallback Bootloader:**
@@ -258,9 +264,11 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - sbctl sign -s /boot/EFI/Linux/arch-fallback.efi
    - Create GRUB USB for recovery:
      - **Replace /dev/sdb1 with your USB partition confirmed via lsblk)**
-     - mkfs.fat -F32 -n RESCUE_USB /dev/sdX1
+     - lsblk
+     - mkfs.fat -F32 -n RESCUE_USB /dev/sdb1
      - mkdir -p /mnt/usb
-     - mount /dev/sdX1 /mnt/usb
+     - - **Replace /dev/sdb1 with your USB partition confirmed via lsblk)**
+     - mount /dev/sdb1 /mnt/usb
      - pacman -Sy grub
      - grub-install --target=x86_64-efi --efi-directory=/mnt/usb --bootloader-id=RescueUSB
      - cp /root/luks-keyfile /mnt/usb/luks-keyfile
@@ -269,7 +277,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
      - cp /boot/initramfs-linux.img /mnt/usb/
      - LUKS_UUID=$(cryptsetup luksUUID /dev/nvme1n1p2)
      - ROOT_UUID=$(blkid -s UUID -o value /dev/mapper/cryptroot) 
-     - cat << 'EOF' > /mnt/usb/boot/grub/grub.cfg
+     - cat <<EOF > /mnt/usb/boot/grub/grub.cfg
        - set timeout=5
        - menuentry "Arch Linux Rescue" {linux /vmlinuz-linux cryptdevice=UUID=$LUKS_UUID:cryptroot cryptkey=UUID=$(blkid -s UUID -o value /dev/sdb1):fat32:/luks-keyfile root=UUID=$ROOT_UUID rw initrd /initramfs-linux.img}
        - EOF
@@ -317,7 +325,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.ko
 
   **d) Automate Signing:**
-   - cat << 'EOF' > /etc/pacman.d/hooks/99-secure-boot-signing.hook
+   - cat <<'EOF' > /etc/pacman.d/hooks/99-secure-boot-signing.hook
      - [Trigger]
      - Operation = Install
      - Type = Package
@@ -457,9 +465,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
  **i) Configure AppArmor with Nvidia Exceptions:**
    - apparmor_parser -r /etc/apparmor.d/*
    - aa-complain /usr/bin/nvidia-smi /usr/bin/nvidia-settings
-   - cat << 'EOF' > /etc/apparmor.d/usr.bin.nvidia
-     - /usr/bin/nvidia-smi rix,
-     - /usr/bin/nvidia-settings rix,
+   - cat <<'EOF' > /etc/apparmor.d/usr.bin.nvidia
+     - /usr/bin/nvidia-smi r,
+     - /usr/bin/nvidia-settings r,
      - /dev/nvidia* rw,
    - EOF
    - apparmor_parser -r /etc/apparmor.d/usr.bin.nvidia 
@@ -573,8 +581,9 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Add environment variables for Nvidia:
     - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" | sudo tee -a /etc/environment
   - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU. Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
-    - cat << 'EOF' | sudo tee /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
-      - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
+    - lspci -nn | grep -i nvidia  # Note the device ID, e.g., 0x1e84 
+    - cat << EOF | sudo tee /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
+      - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci previouly executed**
       - ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe nvidia nvidia_modeset nvidia_uvm nvidia_drm; systemctl restart gdm'"
       - ACTION=="remove", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x<device_id>", RUN+="/usr/bin/bash -c 'modprobe -r nvidia_drm nvidia_uvm nvidia_modeset nvidia; systemctl restart gdm'"
     - EOF
