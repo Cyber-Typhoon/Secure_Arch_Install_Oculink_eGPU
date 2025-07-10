@@ -114,6 +114,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
         - UUID=$ARCH_ESP_UUID /boot vfat umask=0077 0 2
       - For the Windows ESP (`/windows-efi`), find the line added by `genfstab` and change its options from `defaults` to `noauto,x-systemd.automount,umask=0077`. It will look something like: `UUID=<WINDOWS_ESP_UUID_VALUE> /windows-efi vfat defaults 0 2`: 
         - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
+      - blkid | grep -E 'nvme0n1p1|nvme1n1p1' #verify each ESP line and UUID
       - Check the other entries:
        - UUID=$ROOT_UUID / btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
        - UUID=$ROOT_UUID /.snapshots btrfs subvol=@snapshots,ssd,noatime 0 0
@@ -313,6 +314,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl sign -s /boot/EFI/Linux/arch.efi
    - sbctl sign -s /boot/EFI/Linux/arch-fallback.efi
    - sbctl sign -s /usr/lib/systemd/boot/efi/systemd-bootx64.efi
+   - sbctl sign --all
+   - sbctl status   # confirm “Secure Boot enabled; all OK”
 
 
   **c) Sign UKI and Nvidia Modules:**
