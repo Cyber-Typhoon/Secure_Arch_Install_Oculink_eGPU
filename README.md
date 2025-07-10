@@ -106,7 +106,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - swapon -s  # Should show /mnt/swap/swapfile
     - cat /mnt/etc/fstab
 
-  - Edit with nano /mnt/etc/fstab #offset=$(cat /mnt/etc/swap_offset) in fstab comment: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
+  - Edit with nano /mnt/etc/fstab: When you write Edit with nano /mnt/etc/fstab, the lines below it are instructions for what to put into the file, not commands to run. So, $(cat /mnt/etc/swap_offset) needs to be the actual number, which is obtained in step 4e.
       - Review existing entries (for `/`, `/boot`, `/home`, etc.) and adjust mount options for BTRFS subvolumes (e.g., `compress=zstd:3`, `ssd`, `nodatacow`, `noatime`).
       - Adjust ESP mount options:
       - For the Arch ESP (`/boot`), find the line added by `genfstab` and ensure `umask=0077` is present. It will look something like: `UUID=<ARCH_ESP_UUID_VALUE> /boot vfat defaults 0 2`. Change `defaults` to `umask=0077`:  
@@ -133,7 +133,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
 
 ## Step 5: **Install Arch Linux in the (/dev/nvme1n1)**
   - Install base system:
-    - pacstrap /mnt base base-devel linux linux-firmware intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack
+    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack
   - Chroot into the system:
     - arch-chroot /mnt systemctl enable --now fstrim.timer
     - mv /crypto_keyfile /root/luks-keyfile
@@ -301,7 +301,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-drm.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-uvm.ko
-   - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.kof
+   - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.ko
 
   **d) Automate Signing:**
    - cat << 'EOF' > /etc/pacman.d/hooks/99-secure-boot-signing.hook
@@ -455,8 +455,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
    - cat << 'EOF' > /etc/dnscrypt-proxy/dnscrypt-proxy.toml
-     - server_names = ['quad9-dnscrypt', 'adguard-dns', 'nextdns', 'controld', 'mullvad']
-     - listen_addresses = ['127.0.0.1:53', '[::1]:53']
+     - server_names = ["quad9-dnscrypt", "adguard-dns", "nextdns", "controld", "mullvad"]
+     - listen_addresses = ["127.0.0.1:53", "[::1]:53"]
      - require_dnssec = true
      - require_nolog = true
      - require_nofilter = true
@@ -655,7 +655,8 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
   - Install chezmoi:
     - yay -S chezmoi
     - chezmoi init --apply
-    - chezmoi add ~/.zshrc ~/.config/gnome
+    - chezmoi add ~/.zshrc
+    - chezmoi add ~/.config/gnome
     - chezmoi cd
     - git add . && git commit -m "Initial dotfiles"
    
