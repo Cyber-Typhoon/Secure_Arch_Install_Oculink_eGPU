@@ -74,10 +74,10 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - mount -o subvol=@snapshots,ssd,noatime /dev/mapper/cryptroot /mnt/.snapshots
     - mount -o subvol=@home,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/home
     - mount -o subvol=@data,compress=zstd:3,ssd,autodefrag /dev/mapper/cryptroot /mnt/data
-    - mount -o subvol=@var,nodatacow,noatime /dev/mapper/cryptroot /mnt/var
-    - mount -o subvol=@var_lib,nodatacow,noatime /dev/mapper/cryptroot /mnt/var/lib
-    - mount -o subvol=@log,nodatacow,noatime /dev/mapper/cryptroot /mnt/var/log
-    - mount -o subvol=@swap,nodatacow,noatime /dev/mapper/cryptroot /mnt/swap
+    - mount -o subvol=@var,nodatacow,compress=no,noatime /dev/mapper/cryptroot /mnt/var
+    - mount -o subvol=@var_lib,nodatacow,compress=no,noatime /dev/mapper/cryptroot /mnt/var/lib
+    - mount -o subvol=@log,nodatacow,compress=no,noatime /dev/mapper/cryptroot /mnt/var/log
+    - mount -o subvol=@swap,nodatacow,compress=no,noatime /dev/mapper/cryptroot /mnt/swap
     - mount -o subvol=@srv,compress=zstd:3,ssd /dev/mapper/cryptroot /mnt/srv
     - mount /dev/nvme1n1p1 /mnt/boot
     - mount /dev/nvme0n1p1 /mnt/windows-efi
