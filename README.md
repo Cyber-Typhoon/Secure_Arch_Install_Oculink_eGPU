@@ -124,7 +124,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
       - Add `tmpfs` entries at the end of the file:
         - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
         - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777 0 0
-      - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e Manually insert the numerical offset into fstab for the swap file entry.
+      - #replace <PASTE_SWAP_OFFSET_HERE> with the actual numerical offset from echo $SWAP_OFFSET after running step 4e Manually insert the numerical offset into fstab for the swap file entry. Ensure the swap offset in /etc/fstab is the actual numerical value, not a shell substitution or variable.
       - cat /mnt/etc/fstab
  
 **f) Check network**:
@@ -215,7 +215,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - sed -i 's/^BINARIES=(.*)/BINARIES=(\/usr\/lib\/systemd\/systemd-cryptsetup \/usr\/bin\/btrfs)/' /etc/mkinitcpio.conf
     - sed -i 's/^MODULES=(.*)/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm nvme)/' /etc/mkinitcpio.conf
     - sed -i 's/^HOOKS=(.*)/HOOKS=(base systemd autodetect modconf block plymouth sd-encrypt resume filesystems keyboard)/' /etc/mkinitcpio.conf
-    - echo 'UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi"' >> /etc/mkinitcpio.conf
+    - echo UKI_OUTPUT_PATH="/boot/EFI/Linux/arch.efi" >> /etc/mkinitcpio.conf # Do not append UKI_OUTPUT_PATH directly to /etc/mkinitcpio.conf.
     - mkinitcpio -P
   - Verify HOOKS order
     - grep HOOKS /etc/mkinitcpio.conf  # Should show block plymouth sd-encrypt resume filesystems 
@@ -312,6 +312,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-modeset.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-drm.ko
    - sbctl sign /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia-uvm.ko
+   - #find /usr/lib/modules/$KERNEL_VERSION -name 'nvidia*.ko' -- if there are others nvidia modules sign them as well.
    - sbctl verify /usr/lib/modules/$KERNEL_VERSION/updates/dkms/nvidia*.ko
 
   **d) Automate Signing:**
@@ -415,7 +416,6 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
    - cat << 'EOF' > /etc/NetworkManager/conf.d/00-macrandomize.conf
      - [device]
      - wifi.scan-rand-mac-address=yes
-     - device.wifi.scan-rand-mac-address=yes
      - [connection]
      - wifi.cloned-mac-address=random
      - EOF
@@ -570,7 +570,7 @@ Observation: Not adopting linux-hardened kernel because of complexity in the set
     - prime-run glxinfo | grep NVIDIA
     - nvidia-smi
   - Add environment variables for Nvidia:
-    - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" >> | sudo tee -a /etc/environment
+    - echo -e "GBM_BACKEND=nvidia-drm\n__GLX_VENDOR_LIBRARY_NAME=nvidia" | sudo tee -a /etc/environment
   - Create udev rules for hotplugging (The udev rule you've written uses loginctl terminate-user $USER, which will forcefully log you out and close all your applications every time you connect or disconnect the eGPU. Recommendation: Modern GNOME on Wayland has improved hot-plugging support. Your first step should be to test hot-plugging without any custom udev rules. It may already work. **Start with no rule, and only add one if you find it's absolutely necessary.**):
     - cat << 'EOF' | sudo tee /etc/udev/rules.d/99-nvidia-egpu.rules # don't create this unless necessary for hotplug
       - - **Replace <device_id> below with Nvidia RTX 5070Ti device ID from lspci**
