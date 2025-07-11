@@ -7,6 +7,8 @@ This action plan outlines the steps to install and configure **Arch Linux** on a
 
 Observation: Not adopting linux-hardened kernel because of complexity in the setup.
 
+Attention: Before executing commands, especially those involving **dd, mkfs, cryptsetup, parted, and efibootmgr**, re-read them multiple times to ensure you understand their effect and that the target device/partition is correct.
+
 ## Step 1: **Verify Hardware**
    - Access UEFI BIOS (F2 at boot):
      - Enable TPM 2.0, Secure Boot, Resizable BAR, SVM/VT-x, and Intel VT-d (IOMMU).
