@@ -32,6 +32,20 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
 ## Step 3: **Prepare Installation Media**
   - Download the latest Arch Linux ISO from [archlinux.org](https://archlinux.org/download/).
   - Verify the ISO and create a bootable USB (e.g., using `dd` or Ventoy). gpg --verify archlinux-<version>-x86_64.iso.sig
+  - Pre-computation and Pre-determination of System Identifiers
+    - LUKS Partition UUID:
+    - After encrypting your chosen partition (e.g., /dev/nvme1n1p2) with LUKS, retrieve its UUID. This UUID is distinct from the UUID of the logical volume within the LUKS container.
+      - cryptsetup luksUUID /dev/nvme1n1p2
+    - Record this UUID. It will be essential for the crypttab entry and potentially for rd.luks.uuid in your kernel parameters if not using the /dev/mapper name directly in the bootloader.
+    - Root Filesystem UUID:
+    - Once your root filesystem (e.g., BTRFS on /dev/mapper/cryptroot) is created, obtain its UUID.
+      - blkid -s UUID -o value /dev/mapper/cryptroot
+    - Record this UUID. This will be used in your /etc/fstab entry for the root filesystem.
+    - Swap File/Partition Offset (for Hibernation):
+    - If you are using a swap file on a BTRFS subvolume and plan to use hibernation, you'll need to determine the physical offset of the swap file within the filesystem. This offset is crucial for the resume_offset kernel parameter. First, ensure your swap file is created and chattr +C is applied to prevent Copy-On-Write for the swap file. Then, get the offset:
+      - SWAP_OFFSET=$(btrfs inspect-internal map-logical -l /mnt/swap/swapfile | head -n 1 | awk '{print $NF}')
+      - echo "SWAP_OFFSET: $SWAP_OFFSET"
+   - Record this SWAP_OFFSET value. This numerical value will be directly inserted into your systemd-boot kernel parameters and potentially your fstab if you're using resume= with a swap file.
 
 ## Step 4: **Pre-Arch Installation Steps**
 **Boot Arch Live USB (disable Secure Boot temporarily in UEFI)**
