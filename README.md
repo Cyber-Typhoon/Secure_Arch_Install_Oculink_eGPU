@@ -71,7 +71,6 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
     - lsblk
     - mount /dev/sdX1 /mnt/usb # **Replace sdX1 with USB partition confirmed via lsblk previously executed**
     - cp /mnt/crypto_keyfile /mnt/usb/crypto_keyfile
-    - umount /mnt # Only unmount after keyfile is on the *actual* encrypted partition
        
   **d) Create BTRFS Filesystem and Subvolumes**:
   - Format as BTRFS:
