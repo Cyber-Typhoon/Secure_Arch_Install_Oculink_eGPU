@@ -156,7 +156,7 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
     - pacman -Sy reflector  
     - reflector --latest 10 --sort rate --save /etc/pacman.d/mirrorlist  
   - Install base system:
-    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring arch-install-scripts intel-media-driver
+    - pacstrap /mnt base base-devel linux linux-firmware mkinitcpio intel-ucode zsh nvidia-dkms nvidia-utils nvidia-settings opencl-nvidia cuda btrfs-progs sudo cryptsetup dosfstools efibootmgr networkmanager mesa libva-mesa-driver pipewire wireplumber pipewire-pulse pipewire-alsa pipewire-jack archlinux-keyring arch-install-scripts intel-media-driver sof-firmware vulkan-intel lib32-vulkan-intel
   - Chroot into the system:
     - arch-chroot /mnt 
     - mv /crypto_keyfile /root/luks-keyfile
