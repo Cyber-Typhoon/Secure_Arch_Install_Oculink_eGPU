@@ -46,9 +46,9 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
     - Record this UUID. This will be used in your /etc/fstab entry for the root filesystem.
     - Swap File/Partition Offset (for Hibernation):
     - If you are using a swap file on a BTRFS subvolume and plan to use hibernation, you'll need to determine the physical offset of the swap file within the filesystem. This offset is crucial for the resume_offset kernel parameter. First, ensure your swap file is created and chattr +C is applied to prevent Copy-On-Write for the swap file. Then, get the offset:
-      - SWAP_OFFSET=$(btrfs inspect-internal map-logical -l /mnt/swap/swapfile | head -n 1 | awk '{print $NF}')
-      - echo "SWAP_OFFSET: $SWAP_OFFSET"
-      - Record this SWAP_OFFSET value. This numerical value will be directly inserted into your systemd-boot kernel parameters and potentially your fstab if you're using resume= with a swap file.
+      - SWAP_OFFSET=$(btrfs inspect-internal map-swapfile -r /mnt/swap/swapfile | awk '{print $NF}')
+      - echo "resume_offset=${SWAP_OFFSET}" >> /mnt/etc/default/grub # Example for grub, you correctly put it in the UKI options.
+    - Record this SWAP_OFFSET value. This numerical value will be directly inserted into your systemd-boot kernel parameters and potentially your fstab if you're using resume= with a swap file.
         
   **a) Partition the Second NVMe M.2 (/dev/nvme1n1)**:
   - parted /dev/nvme1n1 --script mklabel gpt mkpart ESP fat32 1MiB 1GiB set 1 esp on mkpart crypt btrfs 1GiB 100% align-check optimal 1 quit
@@ -112,6 +112,7 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
   - Create a swap file on `@swap` subvolume:
     - mount -o subvol=@swap,nodatacow,compress=no /dev/mapper/cryptroot /mnt/swap
     - touch /mnt/swap/swapfile
+    - btrfs filesystem defragment -r /mnt/swap 
     - chattr +C /mnt/swap/swapfile
     - fallocate -l 24G /mnt/swap/swapfile || { echo "fallocate failed"; exit 1; }
     - chmod 600 /mnt/swap/swapfile
@@ -131,14 +132,14 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
         - UUID=$WINDOWS_ESP_UUID /windows-efi vfat noauto,x-systemd.automount,umask=0077 0 2
       - blkid | grep -E 'nvme0n1p1|nvme1n1p1' #verify each ESP line and UUID
       - Check the other entries:
-       - UUID=$ROOT_UUID / btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime 0 0
+       - UUID=$ROOT_UUID / btrfs subvol=@,compress=zstd:3,ssd,autodefrag,noatime,space_cache=v2 0 0
        - UUID=$ROOT_UUID /.snapshots btrfs subvol=@snapshots,ssd,noatime 0 0
-       - UUID=$ROOT_UUID /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime 0 0
-       - UUID=$ROOT_UUID /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime 0 0
+       - UUID=$ROOT_UUID /home btrfs subvol=@home,compress=zstd:3,ssd,autodefrag,noatime,space_cache=v2 0 0
+       - UUID=$ROOT_UUID /data btrfs subvol=@data,compress=zstd:3,ssd,autodefrag,noatime,space_cache=v2 0 0
        - UUID=$ROOT_UUID /var btrfs subvol=@var,nodatacow,noatime 0 0
        - UUID=$ROOT_UUID /var/lib btrfs subvol=@var_lib,nodatacow,noatime 0 0
        - UUID=$ROOT_UUID /var/log btrfs subvol=@log,nodatacow,noatime 0 0
-       - UUID=$ROOT_UUID /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime 0 0 
+       - UUID=$ROOT_UUID /srv btrfs subvol=@srv,compress=zstd:3,ssd,noatime,space_cache=v2 0 0 
       - Add `tmpfs` entries at the end of the file:
         - tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
         - tmpfs /var/tmp tmpfs defaults,noatime,nosuid,nodev,mode=1777 0 0
@@ -185,7 +186,7 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
   - Set root password:
     - passwd 
   - Create a user with Zsh as the default shell:
-    - useradd -m -G wheel,video,input,storage -s /usr/bin/zsh <username>
+    - useradd -m -G wheel,video,input,storage,audio,power,lp -s /usr/bin/zsh <username>
     - passwd <username>
   - Configure `sudo`:
     - sed -i '/^# %wheel ALL=(ALL:ALL) ALL/s/^# //' /etc/sudoers
@@ -382,7 +383,7 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
    - Verify yay to show PKGBUILD diffs
     - yay -Pg | grep -E 'diffmenu|answerdiff'
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
-   - pacman -S --needed yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp powertop cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth opensnitch
+   - pacman -S --needed yay gnome-tweaks networkmanager bluez bluez-utils ufw apparmor tlp cpupower upower systemd-timesyncd zsh snapper fapolicyd sshguard rkhunter lynis usbguard aide pacman-notifier mullvad-browser brave-browser tor-browser bitwarden helix zellij yazi blender krita gimp gcc gdb rustup python-pygobject git fwupd xdg-ninja libva-vdpau-driver libva-nvidia-driver zram-generator ripgrep fd eza gstreamer gst-plugins-good gst-plugins-bad gst-plugins-ugly ffmpeg gst-libav fprintd dnscrypt-proxy systeroid rage zoxide jaq atuin gitui glow delta tokei dua tealdeer fzf procs gping dog httpie bottom bandwhich gnome-bluetooth opensnitch
   - Install applications via Flatpak:
    - flatpak install flathub lollypop steam element-desktop Standard-Notes
 
@@ -410,19 +411,7 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
 **a) Configure Power Management:**
    - systemctl enable --now tlp
    - systemctl mask power-profiles-daemon
-   - systemctl disable power-profiles-daemon 
-     - cat << 'EOF' > /etc/systemd/system/powertop.service
-       - [Unit]
-       - Description=Powertop Auto-Tune
-       - After=multi-user.target suspend.target hibernate.target hybrid-sleep.target 
-       - [Service]
-       - Type=oneshot
-       - ExecStart=/usr/bin/powertop --auto-tune
-       - RemainAfterExit=yes
-       - [Install]
-       - WantedBy=multi-user.target suspend.target hibernate.target hybrid-sleep.target
-     - EOF
-     - systemctl enable --now powertop.service
+   - systemctl disable power-profiles-daemon
 
  **b) Configure Wayland envars:**
    - cat << 'EOF' > /etc/environment
@@ -489,6 +478,8 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
      - /usr/bin/nvidia-smi r,
      - /usr/bin/nvidia-settings r,
      - /dev/nvidia* rw,
+     - /sys/bus/pci/devices/** r,
+     - /run/nvidia* rw, 
    - EOF
    - apparmor_parser -r /etc/apparmor.d/usr.bin.nvidia
    - find /usr/lib/modules/$(uname -r) -name 'nvidia*.ko' #Nvidia driver updates may introduce new kernel modules or change paths. Periodically review the paths to Nvidia modules. Update the AppArmor profile as needed. 
@@ -498,13 +489,15 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
    - nmcli connection modify <connection_name> ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes #replace <connection_name> with your actual network connection (e.g., nmcli connection show to find it)
    - nmcli connection modify <connection_name> ipv6.dns "::1" ipv6.ignore-auto-dns yes
    - cat << 'EOF' > /etc/dnscrypt-proxy/dnscrypt-proxy.toml
-     - server_names = ["quad9-dnscrypt-ip4-filter-pri", "adguard-dns-family", "nextdns-ultralow", "controld-dns", "mullvad-doh"]
+     - server_names = ["quad9-dnscrypt-ip4-filter-pri", "adguard-dns", "mullvad-adblock"]
      - listen_addresses = ["127.0.0.1:53", "[::1]:53"]
      - require_dnssec = true
      - require_nolog = true
-     - require_nofilter = true
+     - require_nofilter = false
    - EOF
    - systemctl restart dnscrypt-proxy
+   - test DNS resolution
+     - drill -D archlinux.org 
 
   **k) Configure `usbguard` with GSConnect exception:**
    - usbguard generate-policy > /etc/usbguard/rules.conf
