@@ -378,8 +378,14 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
   - Install `thinklmi` to verify BIOS settings:
    - pacman -S --needed thinklmi
   - Check BIOS settings: sudo thinklmi
-  - After installing yay Configure to show PKGBUILD diffs
-    - yay -Y --diffmenu --answerdiff=All || { echo "Failed to configure yay"; exit 1; }
+  - After installing yay Configure to show PKGBUILD diffs (edit the Yay config file)
+    - yay -Y --editmenu
+    - #Then add or enable:
+    - diffmenu = true
+    - useask = true
+    - answerdiff = All   (optional) -- automatically says "yes" to showing diffs for all AUR packages during updates/installations.
+    - Alternative to editing the Yay config you can set an alias or edit your ~/.config/yay/config.json to always include these flags:
+    - alias yay='yay --diffmenu --useask'
    - Verify yay to show PKGBUILD diffs
     - yay -Pg | grep -E 'diffmenu|answerdiff'
   - Install core applications: #Use **--needed** with pacman and yay to avoid reinstalling existing packages. Review AUR PKGBUILDs
