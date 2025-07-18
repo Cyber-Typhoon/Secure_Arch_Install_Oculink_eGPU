@@ -433,7 +433,6 @@ Attention: Before executing commands, especially those involving **dd, mkfs, cry
    - EOF
    - chmod +x ~/.config/wayland-nvidia-run
    - gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"
-   - gsettings set org.gnome.desktop.interface scaling-factor 1.25
 
  **c) Configure MAC randomization:**
    - mkdir -p /etc/NetworkManager/conf.d
